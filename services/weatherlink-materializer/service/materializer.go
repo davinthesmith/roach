@@ -2,9 +2,10 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"log"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/segmentio/kafka-go"
 
 	"weather-sql/cache"
@@ -14,28 +15,43 @@ import (
 
 // Materializer orchestrates the materialization of Kafka messages to PostgreSQL
 type Materializer struct {
-	config       models.Config
-	db           *sql.DB
-	cache        *cache.Cache
-	metadataProc *MetadataProcessor
-	catalogProc  *CatalogProcessor
-	dataProc     *DataProcessor
-	enricher     *Enricher
+	config         models.Config
+	pool           *pgxpool.Pool
+	cache          *cache.Cache
+	metadataProc   *MetadataProcessor
+	catalogProc    *CatalogProcessor
+	dataProc       *DataProcessor
+	enricher       *Enricher
 	metadataReader *kafka.Reader
 	catalogReader  *kafka.Reader
+	batchWriter    *repository.BatchWriter
+	workerPool     *WorkerPool
 }
 
 // New creates a new Materializer
-func New(config models.Config, db *sql.DB) (*Materializer, error) {
+func New(config models.Config, pool *pgxpool.Pool) (*Materializer, error) {
 	// Initialize cache
 	c := cache.New()
 
 	// Initialize repositories
-	deviceRepo := repository.NewDeviceRepository(db)
-	tagRepo := repository.NewTagRepository(db)
-	catalogRepo := repository.NewCatalogRepository(db)
-	recordRepo := repository.NewRecordRepository(db)
-	orphanRepo := repository.NewOrphanRepository(db)
+	deviceRepo := repository.NewDeviceRepository(pool)
+	tagRepo := repository.NewTagRepository(pool)
+	catalogRepo := repository.NewCatalogRepository(pool)
+	recordRepo := repository.NewRecordRepository(pool)
+	orphanRepo := repository.NewOrphanRepository(pool)
+
+	// Initialize batch writer
+	flushInterval := time.Duration(config.BatchFlushIntervalMs) * time.Millisecond
+	batchWriter := repository.NewBatchWriter(pool, config.BatchSize, flushInterval)
+
+	// Initialize worker pool
+	workerPool := NewWorkerPool(
+		config.WorkerPoolSize,
+		batchWriter,
+		tagRepo,
+		orphanRepo,
+		c,
+	)
 
 	// Initialize processors
 	metadataProc := NewMetadataProcessor(deviceRepo, c)
@@ -45,12 +61,14 @@ func New(config models.Config, db *sql.DB) (*Materializer, error) {
 
 	return &Materializer{
 		config:       config,
-		db:           db,
+		pool:         pool,
 		cache:        c,
 		metadataProc: metadataProc,
 		catalogProc:  catalogProc,
 		dataProc:     dataProc,
 		enricher:     enricher,
+		batchWriter:  batchWriter,
+		workerPool:   workerPool,
 	}, nil
 }
 
@@ -76,6 +94,12 @@ func (m *Materializer) Start(ctx context.Context) error {
 		log.Printf("Warning: Failed to enrich tags: %v", err)
 	}
 
+	// Start worker pool
+	m.workerPool.Start()
+
+	// Start metrics logger
+	go m.logMetrics(ctx)
+
 	// Start catalog listener in background
 	go m.listenForCatalog(ctx)
 
@@ -89,15 +113,36 @@ func (m *Materializer) Start(ctx context.Context) error {
 
 // Close closes the materializer
 func (m *Materializer) Close() error {
+	log.Println("Closing materializer...")
+	
+	// Close Kafka readers
 	if m.catalogReader != nil {
 		m.catalogReader.Close()
 	}
 	if m.metadataReader != nil {
 		m.metadataReader.Close()
 	}
-	if m.db != nil {
-		m.db.Close()
+	
+	// Shutdown worker pool
+	if m.workerPool != nil {
+		if err := m.workerPool.Shutdown(context.Background()); err != nil {
+			log.Printf("Error shutting down worker pool: %v", err)
+		}
 	}
+	
+	// Close batch writer (flushes remaining records)
+	if m.batchWriter != nil {
+		if err := m.batchWriter.Close(context.Background()); err != nil {
+			log.Printf("Error closing batch writer: %v", err)
+		}
+	}
+	
+	// Close connection pool
+	if m.pool != nil {
+		m.pool.Close()
+	}
+	
+	log.Println("Materializer closed")
 	return nil
 }
 
@@ -119,5 +164,40 @@ func (m *Materializer) listenForCatalog(ctx context.Context) {
 
 // listenForData listens for data messages
 func (m *Materializer) listenForData(ctx context.Context) error {
-	return m.dataProc.Listen(ctx, m.config.KafkaBroker)
+	return m.dataProc.ListenWithWorkerPool(ctx, m.config.KafkaBroker, m.workerPool)
+}
+
+// logMetrics periodically logs performance metrics
+func (m *Materializer) logMetrics(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Get worker pool metrics
+			processed, errors := m.workerPool.GetMetrics()
+
+			// Get batch writer metrics
+			numericInserts, textInserts, nullInserts, flushes := m.batchWriter.GetMetrics()
+
+			// Get current batch sizes
+			numericBatch, textBatch, nullBatch := m.batchWriter.GetBatchSizes()
+
+			// Get pool stats
+			stats := m.pool.Stat()
+
+			log.Printf("=== METRICS ===")
+			log.Printf("Worker Pool: processed=%d, errors=%d", processed, errors)
+			log.Printf("Batch Writer: numeric=%d, text=%d, null=%d, flushes=%d", 
+				numericInserts, textInserts, nullInserts, flushes)
+			log.Printf("Current Batches: numeric=%d, text=%d, null=%d", 
+				numericBatch, textBatch, nullBatch)
+			log.Printf("DB Pool: acquired=%d, idle=%d, max=%d", 
+				stats.AcquiredConns(), stats.IdleConns(), stats.MaxConns())
+			log.Printf("===============")
+		}
+	}
 }

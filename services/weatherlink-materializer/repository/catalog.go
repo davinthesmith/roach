@@ -2,28 +2,29 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"weather-sql/models"
 )
 
 // CatalogRepository handles database operations for sensor catalog
 type CatalogRepository struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
 // NewCatalogRepository creates a new CatalogRepository
-func NewCatalogRepository(db *sql.DB) *CatalogRepository {
-	return &CatalogRepository{db: db}
+func NewCatalogRepository(pool *pgxpool.Pool) *CatalogRepository {
+	return &CatalogRepository{pool: pool}
 }
 
 // LoadAll loads all catalog entries from the database
 func (r *CatalogRepository) LoadAll(ctx context.Context) ([]*models.FieldMetadata, error) {
 	log.Println("Loading catalog from database...")
 
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT sensor_type, data_structure_type, field_name, field_type, units, description
 		FROM sensor_catalog
 	`)
@@ -62,7 +63,7 @@ func (r *CatalogRepository) LoadAll(ctx context.Context) ([]*models.FieldMetadat
 
 // Upsert creates or updates a catalog entry
 func (r *CatalogRepository) Upsert(ctx context.Context, sensorType int, dsType, fieldName, fieldType, units, description string) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO sensor_catalog (sensor_type, data_structure_type, field_name, field_type, units, description, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (sensor_type, data_structure_type, field_name) DO UPDATE SET

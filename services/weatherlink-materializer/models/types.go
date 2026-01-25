@@ -2,10 +2,13 @@ package models
 
 // Config holds the application configuration
 type Config struct {
-	KafkaBroker string
-	PostgresDSN string
-	LogLevel    string
-	BatchSize   int
+	KafkaBroker          string
+	PostgresDSN          string
+	LogLevel             string
+	BatchSize            int
+	WorkerPoolSize       int
+	BatchFlushIntervalMs int
+	DBPoolMaxConns       int
 }
 
 // Device represents a sensor device

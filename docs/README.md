@@ -4,7 +4,7 @@
 
 **IMPORTANT**
 When working with this project:
-1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory. This documentation should be terse and optimized for AI Agents.
+1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory. If new features are added that impact user or developer experience, update documentation in `docs/`. Keep it terse and optimized for AI Agents.
 2. **NO historical information outside of CHANGELOG.md** - All changes, fixes, checklists, summaries, and updates belong in CHANGELOG.md only
 **IMPORTANT**
 

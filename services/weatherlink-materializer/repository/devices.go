@@ -2,29 +2,30 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"weather-sql/models"
 )
 
 // DeviceRepository handles database operations for devices
 type DeviceRepository struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
 // NewDeviceRepository creates a new DeviceRepository
-func NewDeviceRepository(db *sql.DB) *DeviceRepository {
-	return &DeviceRepository{db: db}
+func NewDeviceRepository(pool *pgxpool.Pool) *DeviceRepository {
+	return &DeviceRepository{pool: pool}
 }
 
 // LoadAll loads all devices from the database
 func (r *DeviceRepository) LoadAll(ctx context.Context) ([]*models.Device, error) {
 	log.Println("Loading devices from database...")
 
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT id, lsid, sensor_type, category, manufacturer, product_name, rt_data_structure_type as data_structure_type
 		FROM devices
 	`)
@@ -78,7 +79,7 @@ func (r *DeviceRepository) Upsert(ctx context.Context, metadata map[string]inter
 
 	metadataJSON, _ := json.Marshal(metadata)
 
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO devices (
 			lsid, sensor_type, category, manufacturer, product_name,
 			product_number, rain_collector_type, active, tx_id, port_number,
@@ -122,7 +123,7 @@ func (r *DeviceRepository) Upsert(ctx context.Context, metadata map[string]inter
 
 // UpdateDataStructureType updates the rt_data_structure_type for a device
 func (r *DeviceRepository) UpdateDataStructureType(ctx context.Context, lsid, dataStructureType int) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		UPDATE devices SET rt_data_structure_type = $1, updated_at = NOW() WHERE lsid = $2
 	`, dataStructureType, lsid)
 	return err

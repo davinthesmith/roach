@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"weather-sql/config"
 	"weather-sql/kafka"
@@ -28,26 +27,36 @@ func main() {
 	log.Printf("Configuration loaded:")
 	log.Printf("  - Kafka Broker: %s", cfg.KafkaBroker)
 	log.Printf("  - Batch Size: %d", cfg.BatchSize)
+	log.Printf("  - Worker Pool Size: %d", cfg.WorkerPoolSize)
+	log.Printf("  - Batch Flush Interval: %dms", cfg.BatchFlushIntervalMs)
+	log.Printf("  - DB Pool Max Conns: %d", cfg.DBPoolMaxConns)
 
-	// Connect to database
-	db, err := sql.Open("postgres", cfg.PostgresDSN)
+	// Connect to database with pgxpool
+	poolConfig, err := pgxpool.ParseConfig(cfg.PostgresDSN)
+	if err != nil {
+		log.Fatalf("Failed to parse PostgreSQL DSN: %v", err)
+	}
+	
+	poolConfig.MaxConns = int32(cfg.DBPoolMaxConns)
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	if err := db.Ping(); err != nil {
+	if err := pool.Ping(context.Background()); err != nil {
 		log.Fatalf("Failed to ping PostgreSQL: %v", err)
 	}
 
-	log.Println("Connected to PostgreSQL")
+	log.Println("Connected to PostgreSQL with connection pool")
 
 	// Create Kafka readers
 	metadataReader := kafka.NewMetadataReader(cfg)
 	catalogReader := kafka.NewCatalogReader(cfg)
 
 	// Create materializer
-	materializer, err := service.New(cfg, db)
+	materializer, err := service.New(cfg, pool)
 	if err != nil {
 		log.Fatalf("Failed to create materializer: %v", err)
 	}

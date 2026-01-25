@@ -237,6 +237,84 @@ func (p *DataProcessor) Listen(ctx context.Context, kafkaBroker string) error {
 	}
 }
 
+// ListenWithWorkerPool listens for data messages and distributes them to worker pool
+func (p *DataProcessor) ListenWithWorkerPool(ctx context.Context, kafkaBroker string, workerPool *WorkerPool) error {
+	log.Println("Subscribing to weather data topics with worker pool...")
+
+	// List all topics and filter for weather.* (excluding metadata)
+	conn, err := kafka.Dial("tcp", kafkaBroker)
+	if err != nil {
+		return fmt.Errorf("failed to dial kafka: %w", err)
+	}
+	defer conn.Close()
+
+	partitions, err := conn.ReadPartitions()
+	if err != nil {
+		return fmt.Errorf("failed to read partitions: %w", err)
+	}
+
+	topics := make(map[string]bool)
+	for _, p := range partitions {
+		if len(p.Topic) > 8 && p.Topic[:8] == "weather." {
+			// Exclude metadata topics
+			if len(p.Topic) >= 17 && p.Topic[:17] == "weather.metadata." {
+				continue
+			}
+			topics[p.Topic] = true
+		}
+	}
+
+	log.Printf("Found %d data topics to consume", len(topics))
+
+	// Create readers for each topic
+	readers := make([]*kafka.Reader, 0)
+	for topic := range topics {
+		reader := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:     []string{kafkaBroker},
+			GroupID:     "weather-sql-materializer",
+			GroupTopics: []string{topic},
+			MinBytes:    10e3,
+			MaxBytes:    10e6,
+			StartOffset: kafka.LastOffset,
+		})
+		readers = append(readers, reader)
+		log.Printf("Subscribed to topic: %s", topic)
+	}
+
+	// Distribute messages to worker pool
+	for {
+		select {
+		case <-ctx.Done():
+			for _, r := range readers {
+				r.Close()
+			}
+			return ctx.Err()
+		default:
+			// Read from each reader
+			for _, reader := range readers {
+				msgCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+				msg, err := reader.FetchMessage(msgCtx)
+				cancel()
+
+				if err != nil {
+					continue
+				}
+
+				// Submit to worker pool
+				if err := workerPool.SubmitMessage(msg); err != nil {
+					log.Printf("Error submitting message to worker pool: %v", err)
+					continue
+				}
+
+				// Commit immediately after submission
+				if err := reader.CommitMessages(context.Background(), msg); err != nil {
+					log.Printf("Error committing message: %v", err)
+				}
+			}
+		}
+	}
+}
+
 // Helper function
 func determineDataType(value interface{}) string {
 	if value == nil {

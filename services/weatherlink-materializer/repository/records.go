@@ -2,25 +2,26 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"weather-sql/models"
 )
 
 // RecordRepository handles database operations for records
 type RecordRepository struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
 // NewRecordRepository creates a new RecordRepository
-func NewRecordRepository(db *sql.DB) *RecordRepository {
-	return &RecordRepository{db: db}
+func NewRecordRepository(pool *pgxpool.Pool) *RecordRepository {
+	return &RecordRepository{pool: pool}
 }
 
 // InsertNumeric inserts a numeric record
 func (r *RecordRepository) InsertNumeric(ctx context.Context, tagID int, value float64, timestamp int64) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO records_numeric (tag_id, value, ts)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (tag_id, ts) DO NOTHING
@@ -30,7 +31,7 @@ func (r *RecordRepository) InsertNumeric(ctx context.Context, tagID int, value f
 
 // InsertText inserts a text record
 func (r *RecordRepository) InsertText(ctx context.Context, tagID int, value string, timestamp int64) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO records_text (tag_id, value, ts)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (tag_id, ts) DO NOTHING
@@ -40,7 +41,7 @@ func (r *RecordRepository) InsertText(ctx context.Context, tagID int, value stri
 
 // InsertNull inserts a null record
 func (r *RecordRepository) InsertNull(ctx context.Context, tagID int, timestamp int64) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO records_null (tag_id, ts)
 		VALUES ($1, $2)
 		ON CONFLICT (tag_id, ts) DO NOTHING

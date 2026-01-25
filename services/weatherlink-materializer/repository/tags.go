@@ -2,29 +2,30 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"weather-sql/models"
 )
 
 // TagRepository handles database operations for tags
 type TagRepository struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
 // NewTagRepository creates a new TagRepository
-func NewTagRepository(db *sql.DB) *TagRepository {
-	return &TagRepository{db: db}
+func NewTagRepository(pool *pgxpool.Pool) *TagRepository {
+	return &TagRepository{pool: pool}
 }
 
 // LoadAll loads all tags from the database
 func (r *TagRepository) LoadAll(ctx context.Context) ([]*models.Tag, error) {
 	log.Println("Loading tags from database...")
 
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT id, device_id, tag_name, data_type
 		FROM tags
 	`)
@@ -59,7 +60,7 @@ func (r *TagRepository) CreateOrUpdate(ctx context.Context, deviceID int, tagNam
 	}
 
 	var tagID int
-	err = r.db.QueryRowContext(ctx, `
+	err = r.pool.QueryRow(ctx, `
 		INSERT INTO tags (device_id, tag_name, data_type, unit, description, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (device_id, tag_name) DO UPDATE SET
@@ -79,7 +80,7 @@ func (r *TagRepository) EnrichWithCatalog(ctx context.Context, enrichFunc func(t
 	log.Println("Enriching existing tags with catalog metadata...")
 
 	// Query tags that need enrichment
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT 
 			t.id,
 			t.device_id,
@@ -126,7 +127,7 @@ func (r *TagRepository) EnrichWithCatalog(ctx context.Context, enrichFunc func(t
 
 // Update updates tag metadata
 func (r *TagRepository) Update(ctx context.Context, tagID int, unit, description string, metadata []byte) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		UPDATE tags 
 		SET 
 			unit = COALESCE(unit, $1),
@@ -154,7 +155,7 @@ type TagEnrichmentInfo struct {
 
 // FindTagsNeedingEnrichment finds tags that need enrichment
 func (r *TagRepository) FindTagsNeedingEnrichment(ctx context.Context) ([]*TagEnrichmentInfo, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.pool.Query(ctx, `
 		SELECT 
 			t.id,
 			t.device_id,
@@ -186,7 +187,7 @@ func (r *TagRepository) FindTagsNeedingEnrichment(ctx context.Context) ([]*TagEn
 
 // Enrich enriches a tag with catalog metadata
 func (r *TagRepository) Enrich(ctx context.Context, tagID int, unit, description string, metadata []byte) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.pool.Exec(ctx, `
 		UPDATE tags 
 		SET 
 			unit = COALESCE(unit, $1),
