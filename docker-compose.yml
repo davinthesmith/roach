@@ -3,7 +3,7 @@
 services:
   weather-publish:
     build:
-      context: ./services/weather
+      context: ./services/weather-publish
       dockerfile: Dockerfile
     container_name: roach-weather-publish
     restart: unless-stopped

@@ -1,375 +1,352 @@
 # Architecture
 
-## System Overview
+> **For basics, see [AI-CONTEXT.md](AI-CONTEXT.md)**. This document covers detailed specifications and advanced architecture topics.
 
-ROACH is a Kafka-based data aggregation system for home IoT devices with infinite data persistence.
+## Component Specifications
 
-## Components
+### Kafka Broker
 
-### Infrastructure Layer
-**File**: `docker-compose.infrastructure.yml`
+**Image**: `confluentinc/cp-kafka:7.5.0`
 
-#### Zookeeper
-- **Image**: `confluentinc/cp-zookeeper:7.5.0`
-- **Port**: 2181
-- **Purpose**: Kafka cluster coordination
-- **Data**: `./data/zookeeper`
-- **Health Check**: TCP check on port 2181
-
-#### Kafka Broker
-- **Image**: `confluentinc/cp-kafka:7.5.0`
-- **Ports**: 
-  - 9092 (external, localhost)
-  - 29092 (internal, Docker network)
-- **Retention**: Infinite (`KAFKA_LOG_RETENTION_MS=-1`)
-- **Data**: `./data/kafka`
-- **Health Check**: Broker API version check
-- **Network**: `roach-network`
-
-#### Kafka UI
-- **Image**: `provectuslabs/kafka-ui:latest`
-- **Port**: 8080
-- **Purpose**: Web-based Kafka monitoring and management
-
-#### PostgreSQL
-- **Image**: `postgres:16-alpine`
-- **Port**: 5432
-- **Purpose**: Time-series data storage and materialization
-- **Data**: `./data/postgres`
-- **Health Check**: `pg_isready -U roach`
-- **Network**: `roach-network`
-- **Database**: roach (user: roach)
-- **Schema**:
-  - `devices` - Sensor registry with full metadata
-  - `tags` - Field definitions with units/descriptions
-  - `sensor_catalog` - Field metadata from API catalog
-  - `records_*` - Time-series data tables
-  - `schema_migrations` - Migration tracking
-
-### Application Layer
-**File**: `docker-compose.yml`
-
-#### Weather Publisher (weather-publish)
-- **Language**: Go
-- **Build**: Multi-stage Dockerfile
-- **Purpose**: Fetch WeatherLink data, publish to Kafka with deduplication
-- **Interval**: 5 minutes (configurable)
-- **Topics**: 7 topics (4 data, 3 metadata)
-- **Deduplication**: Timestamp-based cache with PostgreSQL rehydration
-
-#### Weather SQL (weather-sql)
-- **Language**: Go
-- **Build**: Multi-stage Dockerfile
-- **Purpose**: Materialize Kafka messages to PostgreSQL
-- **Consumers**: All `weather.*` data topics + metadata + catalog
-- **Schema**: Device/Tag/Record hierarchy
-- **Features**: 
-  - Auto-tag creation with metadata enrichment
-  - Sensor catalog consumption and caching
-  - Orphaned message tracking
-  - Units and descriptions from API catalog
-
-## Data Flow
-
-```
-WeatherLink API (HTTPS)
-    ↓ Every 5 minutes
-Weather Publisher (Go)
-    ↓ Deduplication check
-Kafka Broker (Infinite retention)
-    ↓ Real-time streaming
-Weather SQL (Go)
-    ↓ Materialization
-PostgreSQL Database
-    ↓ Persistent storage
-Devices → Tags → Records
+**Listeners**:
+```yaml
+KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 ```
 
-## Network Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│  Infrastructure (docker-compose.infra)           │
-│  ┌────────────┐  ┌───────┐  ┌────────┐          │
-│  │ Zookeeper  │→ │ Kafka │← │ Kafka  │          │
-│  │   :2181    │  │:29092 │  │UI:8080 │          │
-│  └────────────┘  └───────┘  └────────┘          │
-│                                                  │
-│  ┌──────────────────────────────────┐           │
-│  │ PostgreSQL :5432                 │           │
-│  │ - roach database                 │           │
-│  │ - Device/Tag/Record schema       │           │
-│  └──────────────────────────────────┘           │
-│           roach-network                          │
-└──────────────────────────────────────────────────┘
-                    ↑
-                    │ kafka:29092, postgres:5432
-┌───────────────────┴──────────────────────────────┐
-│  Applications (docker-compose.yml)               │
-│  ┌──────────────┐  ┌─────────────┐  ┌─────────┐ │
-│  │Weather       │  │Weather      │  │ Future  │ │
-│  │Publisher     │  │SQL          │  │Service  │ │
-│  │(Fetch & Pub) │  │(Materialize)│  │         │ │
-│  └──────────────┘  └─────────────┘  └─────────┘ │
-└──────────────────────────────────────────────────┘
+**Retention**:
+```yaml
+KAFKA_LOG_RETENTION_MS: -1       # Infinite retention
+KAFKA_LOG_RETENTION_BYTES: -1    # No size limit
+KAFKA_LOG_DIRS: /var/lib/kafka/data  # Ensures persistence
 ```
 
-## Service Communication
+**Performance**:
+```yaml
+KAFKA_NUM_NETWORK_THREADS: 3
+KAFKA_NUM_IO_THREADS: 8
+KAFKA_SOCKET_SEND_BUFFER_BYTES: 102400
+KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
+KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600
+KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+```
 
-### Internal (Docker Network)
-- Services → Kafka: `kafka:29092` (plaintext)
-- Services → PostgreSQL: `postgres:5432` (plaintext)
-- Kafka UI → Kafka: `kafka:29092` (plaintext)
-- Kafka → Zookeeper: `zookeeper:2181`
+**Health Check**: `kafka-broker-api-versions --bootstrap-server localhost:29092`
 
-### External (Host)
-- Kafka: `localhost:9092` (plaintext)
-- Kafka UI: `localhost:8080` (HTTP)
-- PostgreSQL: `localhost:5432` (user: roach, db: roach)
+### PostgreSQL
+
+**Image**: `postgres:16-alpine`
+**Database**: `roach`, **User**: `roach`
+**Init Script**: `scripts/db/init/01-schema.sql` (auto-run on first start)
+
+**Schema Tables**:
+- `devices` - 20+ columns including parent device, location, metadata JSONB
+- `tags` - Unique on (device_id, tag_name), includes unit/description
+- `sensor_catalog` - Field metadata indexed by (sensor_type, data_structure_type, field_name)
+- `records_numeric`, `records_text`, `records_null` - Typed time-series storage
+- `records` (view) - Unified interface
+- `orphaned_messages` - Failed processing tracking
+- `schema_migrations` - Migration version tracking
+
+**Indexes**:
+- `idx_devices_lsid` on `devices(lsid)`
+- `idx_devices_active` on `devices(active)`
+- `idx_devices_data_structure_type` on `devices(data_structure_type)`
+- `idx_tags_device_tag` on `tags(device_id, tag_name)` (unique)
+- `idx_sensor_catalog_lookup` on `sensor_catalog(sensor_type, data_structure_type, field_name)` (unique)
+- `idx_records_numeric_tag_timestamp` on `records_numeric(tag_id, timestamp)`
+- `idx_records_text_tag_timestamp` on `records_text(tag_id, timestamp)`
+
+### Zookeeper
+
+**Image**: `confluentinc/cp-zookeeper:7.5.0`
+**Configuration**:
+```yaml
+ZOOKEEPER_CLIENT_PORT: 2181
+ZOOKEEPER_TICK_TIME: 2000
+```
+**Purpose**: Kafka cluster coordination only
+
+### Kafka UI
+
+**Image**: `provectuslabs/kafka-ui:latest`
+**Configuration**: Connects to `kafka:29092` via Docker network
+**Features**: Browse topics, messages, consumer groups, broker health
+
+## Service Implementation Details
+
+### weather-publish Architecture
+
+**Goroutine Structure**:
+```
+main goroutine
+├── Metadata update loop (background)
+│   ├── Fetch sensors (every 24h or on change)
+│   ├── Fetch catalog (every 24h or on change)
+│   └── Fetch station (every 24h or on change)
+└── Main fetch loop (foreground)
+    └── Fetch current conditions (every 5m)
+        ├── Check timestamp cache (deduplicate)
+        ├── Publish to 4 data topics
+        └── Update cache
+```
+
+**Deduplication Strategy**:
+1. In-memory timestamp cache (last 5 minutes)
+2. PostgreSQL rehydration on startup (last 24 hours)
+3. Cache stores: `map[int64]map[int]time.Time` (LSID → data_structure_type → timestamp)
+
+**API Authentication**: HMAC-SHA256 signature generation per WeatherLink v2 spec
+
+**Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types before publishing (reduces size from 3.4MB to ~50-100KB)
+
+### weather-sql Architecture
+
+**Consumer Groups**:
+- `weather-sql-metadata` - Consumes `weather.metadata.sensors`
+- `weather-sql-catalog` - Consumes `weather.metadata.catalog`
+- `weather-sql-data-iss` - Consumes `weather.iss`
+- `weather-sql-data-barometer` - Consumes `weather.barometer`
+- `weather-sql-data-indoor` - Consumes `weather.indoor`
+- `weather-sql-data-health` - Consumes `weather.health`
+
+**Processing Flow**:
+```
+Message arrives
+├── Extract headers (LSID, sensor_type, data_structure_type)
+├── Lookup device in cache
+│   ├── If found: Process message
+│   └── If not found: Save to orphaned_messages
+├── Parse JSON body (field → value map)
+└── For each field:
+    ├── Lookup tag in cache
+    │   ├── If found: Use existing tag
+    │   └── If not found: Create tag with catalog enrichment
+    ├── Determine data type (numeric, text, null)
+    └── Insert to appropriate records_* table
+```
+
+**Cache Management**:
+- Devices cache: `map[int64]*models.Device` (LSID → Device)
+- Tags cache: `map[string]*models.Tag` (key: "device_id:tag_name")
+- Catalog cache: `map[string]*models.FieldMetadata` (key: "sensor_type:data_structure_type:field_name")
+- Thread-safe with `sync.RWMutex`
+
+**Tag Enrichment**:
+1. On catalog update, query tags missing unit/description
+2. Join tags with devices to get sensor metadata
+3. Lookup field metadata in catalog cache
+4. Update tags with units, descriptions, metadata JSONB
+5. Update cache
+
+## Network Details
+
+### Service Communication Matrix
+
+| From | To | Address | Protocol | Purpose |
+|------|----|---------| ---------|---------|
+| weather-publish | Kafka | kafka:29092 | PLAINTEXT | Publish messages |
+| weather-publish | PostgreSQL | postgres:5432 | TCP | Cache rehydration |
+| weather-sql | Kafka | kafka:29092 | PLAINTEXT | Consume messages |
+| weather-sql | PostgreSQL | postgres:5432 | TCP | Materialize data |
+| kafka-ui | Kafka | kafka:29092 | PLAINTEXT | Monitoring |
+| Kafka | Zookeeper | zookeeper:2181 | TCP | Coordination |
+| Host | Kafka | localhost:9092 | PLAINTEXT | External access |
+| Host | PostgreSQL | localhost:5432 | TCP | Database access |
+| Host | Kafka UI | localhost:8080 | HTTP | Web interface |
+
+### Docker Network Configuration
+
+**Network**: `roach-network` (bridge driver)
+**DNS**: Automatic container name resolution
+**Isolation**: Internal services not exposed to host except via port mappings
+
+## Resource Usage
+
+### Average Resource Consumption
+
+| Component | CPU | Memory | Disk Growth |
+|-----------|-----|--------|-------------|
+| Kafka | 1-5% | 1-2 GB | ~1-3 MB/day |
+| Zookeeper | <1% | 100-200 MB | ~1 MB/day |
+| PostgreSQL | 1-3% | 100-500 MB | ~2-5 MB/day |
+| weather-publish | <1% | 20-50 MB | Minimal |
+| weather-sql | 1-3% | 50-100 MB | Minimal |
+| Kafka UI | 1-2% | 100-200 MB | Minimal |
+
+**Total Baseline**: ~2-5% CPU, ~1.5-3 GB RAM, ~5-10 MB/day disk
+
+**Scaling Notes**:
+- Disk growth linear with data frequency
+- At 5-minute intervals: ~1-3 messages/topic × 7 topics × 288 times/day
+- PostgreSQL growth depends on field count and data types
 
 ## Directory Structure
 
 ```
 roach/
-├── docker-compose.infrastructure.yml  # Infrastructure
-├── docker-compose.yml                 # Applications
-├── .env                              # Configuration
-├── scripts/                          # Operations
-│   ├── start-all.sh
-│   ├── start-infra.sh
-│   ├── stop-all.sh
-│   ├── logs.sh
-│   ├── restart.sh
-│   ├── status.sh
+├── docker-compose.infrastructure.yml  # Kafka, Zookeeper, PostgreSQL, UI
+├── docker-compose.yml                 # weather-publish, weather-sql
+├── .env                              # Credentials (gitignored)
+├── .env.example                      # Template
+├── scripts/
+│   ├── start-all.sh                  # Start infrastructure + services
+│   ├── start-infra.sh                # Start infrastructure only
+│   ├── stop-all.sh                   # Stop all
+│   ├── restart.sh                    # Restart service(s)
+│   ├── logs.sh                       # View logs
+│   ├── status.sh                     # System status
 │   └── db/
 │       ├── init/
-│       │   └── 01-schema.sql         # Database schema
+│       │   └── 01-schema.sql         # Initial PostgreSQL schema
 │       ├── migrations/               # Schema migrations
 │       │   ├── 001_*.up.sql
 │       │   └── 001_*.down.sql
 │       ├── migrate.sh                # Migration tool
-│       ├── query.sh                  # Database queries
+│       ├── query.sh                  # Database query helper
 │       └── reload-orphans.sh         # Reprocess orphaned messages
 ├── docs/                             # Documentation
-├── data/                             # Persistent data
-│   ├── kafka/
-│   ├── zookeeper/
-│   └── postgres/
-└── services/                         # Service implementations
-    ├── weather/                      # weather-publish
-    │   ├── main.go
-    │   ├── go.mod
-    │   ├── Dockerfile
+│   ├── AI-CONTEXT.md                 # Quick start context (read first)
+│   ├── README.md                     # Documentation index
+│   ├── architecture.md               # This file
+│   ├── operations.md                 # Operations guide
+│   ├── troubleshooting.md            # Problem solving
+│   ├── go-standards.md               # Code standards
+│   ├── kafka-topics.md               # Topic reference
+│   └── migrations.md                 # Migration details
+├── data/                             # Persistent storage (gitignored)
+│   ├── kafka/                        # Kafka logs and data
+│   ├── zookeeper/                    # Zookeeper data
+│   └── postgres/                     # PostgreSQL data
+└── services/
+    ├── weather-publish/              # Weather publisher
+    │   ├── main.go                   # Entry point
+    │   ├── Dockerfile                # Multi-stage build
+    │   ├── go.mod, go.sum            # Go dependencies
+    │   ├── config/, models/, api/    # Packages
+    │   ├── service/, kafka/, internal/
     │   └── README.md
-    └── weather-sql/                  # weather-sql
-        ├── main.go
-        ├── go.mod
-        ├── Dockerfile
+    └── weather-sql/                  # Weather materializer
+        ├── main.go                   # Entry point
+        ├── Dockerfile                # Multi-stage build
+        ├── go.mod, go.sum            # Go dependencies
+        ├── config/, models/, cache/  # Packages
+        ├── repository/, service/, kafka/
         └── README.md
 ```
 
-## Code Organization
-
-Both services follow clean architecture principles with clear separation of concerns.
-
-> **See [go-standards.md](go-standards.md) for complete Go code organization standards, design principles, and implementation examples.**
-
-### weather-sql Service Structure
-
-```
-weather-sql/
-├── main.go              # Entry point, dependency wiring (~75 lines)
-├── config/              # Configuration loading
-│   └── config.go        # Environment variable parsing
-├── models/              # Data structures
-│   └── types.go         # Device, Tag, FieldMetadata structs
-├── cache/               # In-memory caching
-│   └── cache.go         # Thread-safe cache for devices, tags, catalog
-├── repository/          # Database operations
-│   ├── devices.go       # Device CRUD operations
-│   ├── tags.go          # Tag CRUD and enrichment queries
-│   ├── catalog.go       # Catalog storage and retrieval
-│   ├── records.go       # Record insertion (numeric, text, null)
-│   └── orphans.go       # Orphaned message tracking
-├── service/             # Business logic
-│   ├── materializer.go  # Service orchestration
-│   ├── metadata.go      # Metadata processor (devices)
-│   ├── catalog.go       # Catalog processor
-│   ├── data.go          # Data processor (tags and records)
-│   └── enrichment.go    # Tag enrichment with catalog
-└── kafka/               # Kafka consumers
-    └── consumer.go      # Reader creation utilities
-```
-
-**Package Dependencies**:
-- `main` → `config`, `kafka`, `service`
-- `service` → `repository`, `cache`, `models`
-- `repository` → `models`
-- `cache` → `models`
-
-### weather Service Structure
-
-```
-weather/
-├── main.go              # Entry point, dependency wiring (~85 lines)
-├── config/              # Configuration loading
-│   └── config.go        # Environment variable parsing
-├── models/              # Data structures
-│   └── types.go         # API response structs
-├── api/                 # WeatherLink API client
-│   ├── client.go        # HTTP client wrapper
-│   ├── auth.go          # HMAC-SHA256 signature generation
-│   └── weatherlink.go   # API endpoint methods
-├── kafka/               # Kafka producer
-│   └── producer.go      # Message publishing
-├── service/             # Business logic
-│   ├── service.go       # Service orchestration
-│   ├── metadata.go      # Metadata fetching (sensors, catalog, station)
-│   ├── conditions.go    # Current conditions fetching
-│   └── cache.go         # Timestamp cache and rehydration
-└── internal/            # Internal utilities
-    └── hash.go          # SHA-256 hash calculation
-```
-
-**Package Dependencies**:
-- `main` → `config`, `api`, `kafka`, `service`
-- `service` → `api`, `kafka`, `internal`, `models`
-- `api` → `models`
-- `kafka` → none (generic)
-
-### Design Principles
-
-#### Dependency Injection
-- Services receive dependencies via constructors
-- No package-level global state
-- Enables easy mocking for tests
-
-#### Interface Usage
-- Repository operations can be behind interfaces (future enhancement)
-- API client operations can be behind interfaces (future enhancement)
-- Kafka operations encapsulated in dedicated packages
-
-#### Error Handling
-- Errors propagated up to service layer
-- Service layer decides logging strategy
-- Repository layer returns descriptive errors
-
-#### Context Propagation
-- All long-running operations accept `context.Context`
-- Enables cancellation and timeout
-- Proper cleanup on shutdown
-
 ## Extension Points
+
+### Adding Kafka Topics
+
+Topics auto-created on first publish. Follow naming convention: `namespace.category.subcategory`
+
+**Examples**:
+- `home.hvac.temperature`
+- `home.security.motion`
+- `home.energy.consumption`
+
+### Adding Database Tables
+
+Use migration framework:
+```bash
+./scripts/db/migrate.sh create add_new_table
+# Edit generated .up.sql and .down.sql files
+./scripts/db/migrate.sh up
+```
 
 ### Adding New Services
 
-1. Create service directory: `services/<name>/`
-2. Implement Kafka producer/consumer and/or PostgreSQL integration
-3. Add to `docker-compose.yml`:
-```yaml
-services:
-  new-service:
-    build: ./services/new-service
-    environment:
-      - KAFKA_BROKER=kafka:29092
-      - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    networks:
-      - roach-network
-```
-
-### Topic Naming Convention
-- Format: `namespace.category.subcategory`
-- Examples:
-  - `weather.iss` (outdoor weather)
-  - `home.hvac.temperature`
-  - `home.security.motion`
-
-## Database Schema
-
-### Migration Framework
-
-ROACH uses a lightweight migration system:
-- **Location**: `scripts/db/migrations/`
-- **Tracking**: `schema_migrations` table stores applied migrations
-- **Commands**: `./scripts/db/migrate.sh` with `up`, `down`, `status`, `create`
-- **Format**: `NNN_description.{up,down}.sql`
-
-Migrations are applied in order and tracked with checksums for integrity.
-
-### Schema Tables
-
-**devices** - Sensor registry
-- Core: `id`, `lsid`, `sensor_type`, `category`, `manufacturer`, `product_name`
-- Extended: `product_number`, `rain_collector_type`, `active`, `tx_id`, `port_number`
-- Parent device: `parent_device_type`, `parent_device_name`, `parent_device_id`
-- Location: `station_id`, `station_name`, `latitude`, `longitude`, `elevation`
-- Metadata: `metadata` (JSONB), `data_structure_type`
-
-**tags** - Field definitions
-- Core: `id`, `device_id`, `tag_name`, `data_type`
-- Metadata: `unit`, `description`, `metadata` (JSONB)
-- Unique: `(device_id, tag_name)`
-
-**sensor_catalog** - Field metadata from WeatherLink API
-- `sensor_type`, `data_structure_type`, `field_name`
-- `field_type`, `units`, `description`
-- Unique: `(sensor_type, data_structure_type, field_name)`
-
-**records_numeric** - Numeric time-series data
-- `tag_id`, `device_id`, `value`, `timestamp`
-
-**records_text** - Text time-series data
-- `tag_id`, `device_id`, `value`, `timestamp`
-
-**records_null** - Null value tracking
-- `tag_id`, `device_id`, `timestamp`
-
-**records** (view) - Unified query interface over all record types
-
-**orphaned_messages** - Messages that couldn't be processed
-- Tracks topic, partition, offset, reason
-- Can be reprocessed after fixing issues
-
-**schema_migrations** - Migration tracking
-- `version`, `name`, `applied_at`, `checksum`
-
-## Resource Usage
-
-### CPU
-- Kafka: 1-5% average
-- Zookeeper: <1%
-- PostgreSQL: 1-3% average
-- Weather Publisher: <1% (spikes during fetch)
-- Weather SQL: 1-3% average
-- Kafka UI: 1-2%
-
-### Memory
-- Kafka: 1-2 GB
-- Zookeeper: 100-200 MB
-- PostgreSQL: 100-500 MB (grows with data)
-- Weather Publisher: 20-50 MB
-- Weather SQL: 50-100 MB
-- Kafka UI: 100-200 MB
-
-### Disk
-- Growth: ~1-5 MB/day per service (varies by frequency)
-- Kafka: `./data/kafka`
-- Zookeeper: `./data/zookeeper`
-- PostgreSQL: `./data/postgres`
+1. Create `services/<name>/` with Go service following [go-standards.md](go-standards.md)
+2. Create Dockerfile (use existing services as template)
+3. Add to `docker-compose.yml` with dependencies on `kafka` and `postgres` health checks
+4. Connect to `kafka:29092` and `postgres:5432` via Docker network
+5. Add to `roach-network`
 
 ## Security Model
 
 ### Current (Development)
 - All communication plaintext within Docker network
-- Kafka UI accessible only on localhost
-- No authentication required
+- No authentication on Kafka, PostgreSQL, Kafka UI
+- Services trust each other implicitly
+- Suitable for private networks only
 
 ### Future (Production)
-- SSL/TLS for external Kafka access
+- SSL/TLS for Kafka external access
 - Certificate-based authentication
-- Let's Encrypt certificates mounted read-only
+- PostgreSQL password authentication (already configured)
+- Let's Encrypt certificates for external services
+- Network policies for container isolation
+
+## Data Flow Details
+
+### Weather Data Pipeline
+
+```
+1. WeatherLink API (HTTPS)
+   ↓
+   GET /v2/current/{station_id} (every 5m)
+   GET /v2/sensors/{station_id} (on change)
+   GET /v2/sensor-catalog (on change)
+   
+2. weather-publish
+   ↓
+   Deduplicate (timestamp cache)
+   Parse response
+   Split by sensor category
+   ↓
+   Publish to Kafka (JSON + headers)
+   
+3. Kafka Broker
+   ↓
+   Persist to disk (infinite retention)
+   Replicate (if multi-broker)
+   
+4. weather-sql
+   ↓
+   Consume messages
+   Lookup/create devices
+   Lookup/create tags (with enrichment)
+   Insert to typed records tables
+   
+5. PostgreSQL
+   ↓
+   Query via records view
+   Analyze with SQL
+```
+
+### Metadata Flow
+
+```
+1. API: Sensors/Catalog/Station
+   ↓
+2. weather-publish: Hash comparison
+   ↓ (only if changed)
+3. Kafka: Metadata topics
+   ↓
+4. weather-sql: Upsert to DB + cache
+   ↓
+5. Tag enrichment: Backfill units/descriptions
+```
+
+## Performance Tuning
+
+### Kafka
+
+- `KAFKA_LOG_RETENTION_MS=-1` for infinite retention (or set limit to save disk)
+- `KAFKA_NUM_IO_THREADS=8` for I/O throughput
+- Increase `KAFKA_SOCKET_REQUEST_MAX_BYTES` for large messages
+
+### PostgreSQL
+
+- Default settings suitable for low-volume IoT data
+- For higher volume: Tune `shared_buffers`, `work_mem`, `maintenance_work_mem`
+- Consider partitioning `records_*` tables by timestamp for large datasets
+
+### Services
+
+- Increase `FETCH_INTERVAL` to reduce API calls and Kafka writes
+- Adjust `BATCH_SIZE` in weather-sql for bulk inserts (future)
+- Use `LOG_LEVEL=warn` or `error` in production to reduce I/O

@@ -1,34 +1,37 @@
 # Troubleshooting
 
-## System Won't Start
+> **For common issues, see [AI-CONTEXT.md](AI-CONTEXT.md)**. This document covers comprehensive problem solving.
 
-### Infrastructure Not Starting
+## System Issues
+
+### Services Won't Start
 
 **Symptom**: Services fail to start or exit immediately
 
 **Check**:
 ```bash
 docker compose -f docker-compose.infrastructure.yml logs
+docker ps
 ```
 
-**Common Causes**:
-1. Port conflict (9092, 2181, 8080 already in use)
+**Common causes**:
+1. Port conflicts (9092, 2181, 8080, 5432 already in use)
 2. Insufficient disk space
 3. Docker not running
+4. Invalid .env file
 
 **Solutions**:
 ```bash
 # Check ports
-lsof -i :9092
-lsof -i :2181
-lsof -i :8080
+lsof -i :9092 :2181 :8080 :5432
 
 # Check disk space
 df -h
 
-# Restart Docker
-# On macOS: Restart Docker Desktop
-# On Linux: sudo systemctl restart docker
+# Restart Docker (macOS: Docker Desktop, Linux: sudo systemctl restart docker)
+
+# Verify .env file
+cat .env | grep WEATHERLINK
 ```
 
 ### Services Fail Health Check
@@ -39,22 +42,36 @@ df -h
 ```bash
 docker ps
 docker inspect roach-kafka | grep -A 10 Health
+docker logs roach-kafka
+docker logs roach-zookeeper
+docker logs roach-postgres
 ```
 
 **Solutions**:
 ```bash
 # Wait longer (Kafka takes 30-60s)
-sleep 60
-docker ps
-
-# Check logs for errors
-docker logs roach-kafka
-docker logs roach-zookeeper
+sleep 60 && docker ps
 
 # Clean restart
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -v
 ./scripts/start-all.sh
 ```
+
+### Port Conflicts
+
+**Symptom**: "address already in use" errors
+
+**Identify conflicting process**:
+```bash
+lsof -i :9092  # Kafka
+lsof -i :5432  # PostgreSQL
+lsof -i :8080  # Kafka UI
+```
+
+**Solutions**:
+- Stop conflicting process
+- Change ports in docker-compose files
+- Use different external ports
 
 ## Weather Service Issues
 
@@ -62,61 +79,88 @@ docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -
 
 **Symptom**: `dial tcp: connect: connection refused`
 
-**Cause**: Kafka not ready when service started
+**Cause**: Kafka or PostgreSQL not ready when service started
 
 **Solution**:
 ```bash
-# Wait for Kafka to be healthy
-docker ps  # Check for "(healthy)" status
+# Wait for health checks
+docker ps  # Check for "(healthy)"
 
-# Restart weather service
-./scripts/restart.sh weather
+# Restart service
+./scripts/restart.sh weather-publish
+./scripts/restart.sh weather-sql
 ```
 
 ### API Authentication Errors
 
-**Symptom**: 401 Unauthorized or invalid credentials
+**Symptom**: 401 Unauthorized, invalid credentials
 
 **Check**:
 ```bash
-# Verify credentials loaded
-docker exec roach-weather env | grep WEATHERLINK
+docker exec roach-weather-publish env | grep WEATHERLINK
 ```
 
-**Solution**:
+**Solutions**:
 ```bash
 # Update .env file
 nano .env
 
 # Restart service
-./scripts/restart.sh weather
+./scripts/restart.sh weather-publish
 ```
 
 ### No Data Publishing
 
-**Symptom**: Service runs but no topics created
+**Symptom**: Service runs but no topics created or no messages
 
 **Check**:
 ```bash
-# View service logs
-./scripts/logs.sh weather
-
-# Check if topics exist
+./scripts/logs.sh weather-publish
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
 ```
 
-**Common Causes**:
+**Common causes**:
 1. Invalid API credentials
-2. Station ID incorrect
-3. Network connectivity issues
+2. Incorrect station ID
+3. Network connectivity
+4. API rate limiting
 
 **Debug**:
 ```bash
-# Test WeatherLink API directly
+# Test API directly
 curl -v "https://api.weatherlink.com/v2/current/[station-id]?api-key=[key]"
 
-# Check service can reach Kafka
-docker exec roach-weather nc -zv kafka 29092
+# Check service connectivity
+docker exec roach-weather-publish nc -zv kafka 29092
+docker exec roach-weather-publish nc -zv postgres 5432
+```
+
+### No Data in PostgreSQL
+
+**Symptom**: Kafka has messages but PostgreSQL has no records
+
+**Check**:
+```bash
+./scripts/logs.sh weather-sql
+./scripts/db/query.sh stats
+./scripts/db/query.sh orphans
+```
+
+**Common causes**:
+1. Device metadata not received yet
+2. Messages orphaned due to missing devices
+3. PostgreSQL connection issues
+
+**Solutions**:
+```bash
+# Check for orphaned messages
+./scripts/db/query.sh orphans
+
+# Reprocess after devices loaded
+./scripts/db/reload-orphans.sh
+
+# Restart materializer
+./scripts/restart.sh weather-sql
 ```
 
 ## Kafka Issues
@@ -131,48 +175,37 @@ docker logs roach-kafka
 docker exec roach-kafka kafka-broker-api-versions --bootstrap-server localhost:29092
 ```
 
-**Solution**:
+**Solutions**:
 ```bash
 # Restart Kafka
 docker restart roach-kafka
 
-# If persists, clean restart
+# Clean restart
 docker compose -f docker-compose.infrastructure.yml down
 rm -rf data/kafka  # WARNING: Deletes all data
 ./scripts/start-infra.sh
 ```
 
-### Kafka-Zookeeper Cluster ID Mismatch
+### Cluster ID Mismatch
 
-**Symptom**: Kafka crashes on restart with `InconsistentClusterIdException: The Cluster ID X doesn't match stored clusterId Some(Y)`
+**Symptom**: `InconsistentClusterIdException: The Cluster ID X doesn't match stored clusterId Some(Y)`
 
-**Cause**: Kafka's data directory is not properly persisted, causing cluster ID to regenerate while Zookeeper retains the old one.
+**Cause**: Kafka's cluster ID regenerated while Zookeeper retains old ID
 
 **Check**:
 ```bash
-# View Kafka logs for cluster ID errors
 docker logs roach-kafka 2>&1 | grep -i "InconsistentClusterIdException"
-
-# Check if meta.properties exists
 find ./data/kafka -name "meta.properties"
 ```
 
 **Solution**:
 ```bash
-# Stop services
 ./scripts/stop-all.sh
-
-# Remove mismatched data
 rm -rf data/kafka/* data/zookeeper/*
-
-# Verify KAFKA_LOG_DIRS is set in docker-compose.infrastructure.yml
-# Must be: KAFKA_LOG_DIRS: /var/lib/kafka/data
-
-# Restart
 ./scripts/start-all.sh
 ```
 
-**Prevention**: The docker-compose configuration now includes `KAFKA_LOG_DIRS` environment variable to ensure Kafka stores its logs in the mounted volume directory.
+**Prevention**: Ensure `KAFKA_LOG_DIRS=/var/lib/kafka/data` is set (already configured)
 
 ### Topics Not Auto-Created
 
@@ -180,13 +213,16 @@ rm -rf data/kafka/* data/zookeeper/*
 
 **Check**:
 ```bash
-docker exec roach-kafka kafka-configs --bootstrap-server localhost:29092 \
-  --entity-type brokers --entity-default --describe | grep auto.create
+docker exec roach-kafka kafka-configs \
+  --bootstrap-server localhost:29092 \
+  --entity-type brokers \
+  --entity-default \
+  --describe | grep auto.create
 ```
 
-**Verify**: Should show `auto.create.topics.enable=true`
+**Should show**: `auto.create.topics.enable=true`
 
-**Solution**: Manually create topic:
+**Manual topic creation**:
 ```bash
 docker exec roach-kafka kafka-topics \
   --create \
@@ -198,22 +234,24 @@ docker exec roach-kafka kafka-topics \
 
 ### Out of Disk Space
 
-**Symptom**: Kafka fails to write, errors about disk
+**Symptom**: Kafka fails to write, disk space errors
 
 **Check**:
 ```bash
 df -h
-du -sh data/kafka
+du -sh data/kafka data/zookeeper data/postgres
 ```
 
-**Solution**:
+**Solutions**:
 ```bash
 # Temporary: Delete old data
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down
-rm -rf data/kafka/*
+rm -rf data/kafka/* data/zookeeper/* data/postgres/*
 ./scripts/start-all.sh
 
-# Permanent: Configure retention limits (see configuration.md)
+# Permanent: Configure retention limits
+# Edit docker-compose.infrastructure.yml:
+# KAFKA_LOG_RETENTION_MS: 2592000000  # 30 days
 ```
 
 ## Kafka UI Issues
@@ -226,65 +264,134 @@ rm -rf data/kafka/*
 ```bash
 docker logs roach-kafka-ui
 docker ps | grep kafka-ui
+lsof -i :8080
 ```
 
-**Common Causes**:
-1. Kafka not healthy yet (UI waits for Kafka)
-2. Port 8080 in use
-
-**Solution**:
+**Solutions**:
 ```bash
-# Wait for Kafka
+# Wait for Kafka to be healthy
 sleep 30
-
-# Check port
-lsof -i :8080
 
 # Restart UI
 docker restart roach-kafka-ui
 ```
 
-### Topics Page Spinning / "Retrying to fetch metadata"
+### Topics Page Loading Forever
 
-**Symptom**: Topics page loads but spins forever, logs show "Retrying to fetch metadata"
+**Symptom**: Topics page spins with "Retrying to fetch metadata"
 
-**Cause**: Kafka listener configuration - kafka-ui getting wrong advertised listener
+**Cause**: Kafka listener misconfiguration
 
 **Check**:
 ```bash
 docker logs roach-kafka-ui | grep -i "retry"
 ```
 
-**Solution**:
+**Solution** (if configuration changed):
 ```bash
-# Verify listener configuration in docker-compose.infrastructure.yml
-# Must have INTERNAL and EXTERNAL listeners properly separated:
-# KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
-# KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
-
-# If configuration changed, clean restart required:
+# Clean restart required
 docker compose -f docker-compose.infrastructure.yml down -v
 rm -rf data/zookeeper/* data/kafka/*
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d
+./scripts/start-all.sh
+```
+
+**Verify listener configuration** in docker-compose.infrastructure.yml:
+```yaml
+KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
 ```
 
 ### UI Shows No Topics
 
-**Symptom**: UI loads but shows empty topics list
+**Symptom**: UI loads but topics list is empty
 
 **Check**:
 ```bash
 # Verify topics exist
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
 
-# Check UI can reach Kafka
+# Check UI connectivity
 docker exec roach-kafka-ui nc -zv kafka 29092
 ```
 
 **Solution**:
 ```bash
-# Restart UI
-./scripts/restart.sh
+docker restart roach-kafka-ui
+```
+
+## PostgreSQL Issues
+
+### Connection Refused
+
+**Symptom**: Services can't connect to PostgreSQL
+
+**Check**:
+```bash
+docker logs roach-postgres
+docker exec roach-postgres pg_isready -U roach
+```
+
+**Solutions**:
+```bash
+# Restart PostgreSQL
+docker restart roach-postgres
+
+# Check DSN in service
+docker exec roach-weather-sql env | grep POSTGRES_DSN
+```
+
+### Migration Failures
+
+**Symptom**: Migration won't apply or rolls back incorrectly
+
+**Check**:
+```bash
+./scripts/db/migrate.sh status
+./scripts/db/query.sh psql
+SELECT * FROM schema_migrations;
+```
+
+**Solutions**:
+- Review migration SQL for errors
+- Check PostgreSQL logs: `docker logs roach-postgres`
+- Manually fix schema if needed
+- Update migration checksum if file was corrected
+
+### Empty Tag Units/Descriptions
+
+**Symptom**: Tags have NULL values for `unit` and `description`
+
+**Cause**: Fixed in latest version (catalog filtering implemented)
+
+**Check**:
+```bash
+./scripts/db/query.sh psql
+SELECT COUNT(*) FROM tags WHERE unit IS NOT NULL;
+SELECT COUNT(*) FROM sensor_catalog;
+
+# Check catalog size
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.metadata.catalog \
+  --from-beginning --max-messages 1 2>/dev/null | wc -c
+```
+
+**Solution**: Ensure running latest version with catalog filtering
+
+### Data Not Persisting
+
+**Symptom**: Data lost after restart
+
+**Check**:
+```bash
+docker inspect roach-postgres | grep -A 10 Mounts
+```
+
+**Solution**: Ensure volume mounted in docker-compose.infrastructure.yml:
+```yaml
+postgres:
+  volumes:
+    - ./data/postgres:/var/lib/postgresql/data
 ```
 
 ## Network Issues
@@ -299,7 +406,7 @@ docker network ls | grep roach
 docker network inspect roach-network
 ```
 
-**Solution**:
+**Solutions**:
 ```bash
 # Recreate network
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down
@@ -309,23 +416,19 @@ docker network rm roach-network
 
 ### External Access Not Working
 
-**Symptom**: Can't connect to Kafka from host
+**Symptom**: Can't connect to Kafka/PostgreSQL from host
 
 **Check**:
 ```bash
-# Test connection
-nc -zv localhost 9092
+nc -zv localhost 9092  # Kafka
+nc -zv localhost 5432  # PostgreSQL
 
-# Check if port exposed
+# Check port mappings
 docker ps | grep 9092
+docker ps | grep 5432
 ```
 
-**Solution**: Verify port mapping in `docker-compose.infrastructure.yml`:
-```yaml
-kafka:
-  ports:
-    - "9092:9092"
-```
+**Solution**: Verify port mappings in docker-compose files
 
 ## Performance Issues
 
@@ -336,31 +439,29 @@ kafka:
 docker stats
 ```
 
-**Common Causes**:
+**Common causes**:
 1. Kafka compaction running
 2. Too many consumers
-3. Weather service fetch interval too short
+3. Fetch interval too short
 
-**Solution**:
+**Solutions**:
 ```bash
 # Increase fetch interval
 # Edit docker-compose.yml: FETCH_INTERVAL=10m
 
 # Restart service
-./scripts/restart.sh weather
+./scripts/restart.sh weather-publish
 ```
 
 ### High Memory Usage
-
-**Symptom**: System slowing down, Docker using too much RAM
 
 **Check**:
 ```bash
 docker stats
 ```
 
-**Solution**:
-```bash
+**Solutions**:
+```yaml
 # Limit Kafka memory (docker-compose.infrastructure.yml)
 kafka:
   deploy:
@@ -369,126 +470,38 @@ kafka:
         memory: 1G
 ```
 
-## Data Issues
-
-### Empty Tag Units and Descriptions
-
-**Symptom**: Tags in PostgreSQL have NULL values for `unit` and `description` fields
-
-**Cause**: Sensor catalog message exceeded Kafka's 1MB message limit (full catalog is 3.4MB), causing truncation of the `data_structures` array that contains field metadata
-
-**Check**:
-```bash
-# Check if tags have units
-docker exec -it roach-postgres psql -U postgres -d weather -c \
-  "SELECT tag_name, unit, description FROM tags WHERE unit IS NOT NULL LIMIT 5;"
-
-# Check catalog topic size
-docker exec roach-kafka kafka-console-consumer \
-  --bootstrap-server localhost:29092 \
-  --topic weather.metadata.catalog \
-  --from-beginning --max-messages 1 2>/dev/null | wc -c
-
-# Verify data_structures field exists
-docker exec roach-kafka kafka-console-consumer \
-  --bootstrap-server localhost:29092 \
-  --topic weather.metadata.catalog \
-  --from-beginning --max-messages 1 2>/dev/null | \
-  jq '.sensor_types[0] | has("data_structures")'
-```
-
-**Solution**: This issue was fixed by implementing catalog filtering. The weather service now:
-1. Dynamically discovers sensor types from the `/v2/sensors` API
-2. Filters the catalog to only include those sensor types before publishing
-3. Reduces catalog size from 3.4MB to ~50-100KB while preserving all `data_structures`
-
-If you're experiencing this issue, ensure you're running the latest version with catalog filtering enabled.
-
-**Verification after fix**:
-```bash
-# Filtered catalog should be ~50-100KB
-docker exec roach-kafka kafka-console-consumer \
-  --bootstrap-server localhost:29092 \
-  --topic weather.metadata.catalog \
-  --from-beginning --max-messages 1 2>/dev/null | wc -c
-
-# Should show your actual sensor types only (e.g., 4 types)
-docker exec roach-kafka kafka-console-consumer \
-  --bootstrap-server localhost:29092 \
-  --topic weather.metadata.catalog \
-  --from-beginning --max-messages 1 2>/dev/null | \
-  jq '.sensor_types[].sensor_type'
-
-# Tags should now have units
-docker exec -it roach-postgres psql -U postgres -d weather -c \
-  "SELECT COUNT(*) FROM tags WHERE unit IS NOT NULL;"
-```
-
-### Data Not Persisting
-
-**Symptom**: Data lost after restart
-
-**Check**: Verify volumes mounted:
-```bash
-docker inspect roach-kafka | grep -A 10 Mounts
-```
-
-**Solution**: Ensure volumes in `docker-compose.infrastructure.yml`:
-```yaml
-kafka:
-  volumes:
-    - ./data/kafka:/var/lib/kafka/data
-```
-
-### Corrupt Data Files
-
-**Symptom**: Kafka won't start, log errors about corrupt data
-
-**Solution**:
-```bash
-# Last resort: Delete and restart
-docker compose -f docker-compose.infrastructure.yml down
-rm -rf data/kafka
-./scripts/start-infra.sh
-```
-
 ## Debug Mode
 
 ### Enable Verbose Logging
 
-**Weather Service**:
+**Weather services**:
 ```yaml
 # docker-compose.yml
 services:
-  weather:
+  weather-publish:
     environment:
       - LOG_LEVEL=debug
-```
-
-**Kafka Broker**:
-```bash
-# View detailed logs
-docker logs roach-kafka 2>&1 | grep -i error
+  weather-sql:
+    environment:
+      - LOG_LEVEL=debug
 ```
 
 ### Interactive Debugging
 
 ```bash
 # Enter container
-docker exec -it roach-weather sh
+docker exec -it roach-weather-publish sh
 
 # Check environment
 env
 
-# Test Kafka connection
+# Test connectivity
 nc -zv kafka 29092
+nc -zv postgres 5432
 
 # View service files
 ls -la
-cat main.go
 ```
-
-## Getting Help
 
 ### Collect Debug Information
 
@@ -504,9 +517,16 @@ docker compose config >> debug.txt
 
 # Container info
 docker ps -a >> debug.txt
+
+# Network info
+docker network inspect roach-network >> debug.txt
 ```
 
+## Recovery Procedures
+
 ### Clean State Reset
+
+**When**: System in corrupted state, need fresh start
 
 ```bash
 # Complete reset
@@ -515,4 +535,23 @@ docker network prune -f
 docker volume prune -f
 rm -rf data/
 ./scripts/start-all.sh
+```
+
+**Note**: This deletes all data. Backup first if needed.
+
+### Partial Reset
+
+**Reset Kafka only**:
+```bash
+./scripts/stop-all.sh
+rm -rf data/kafka/* data/zookeeper/*
+./scripts/start-all.sh
+```
+
+**Reset PostgreSQL only**:
+```bash
+./scripts/stop-all.sh
+rm -rf data/postgres/*
+./scripts/start-all.sh
+# Re-run migrations: ./scripts/db/migrate.sh up
 ```

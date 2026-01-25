@@ -54,7 +54,7 @@ BATCH_SIZE=100                     # Batch processing size
 
 ```bash
 # From project root
-docker-compose up weather-sql
+docker compose up weather-sql
 ```
 
 ### Standalone with Go
@@ -124,13 +124,13 @@ If processing fails (missing device, database error):
 
 ```bash
 # View logs
-docker-compose logs -f weather-sql
+docker compose logs -f weather-sql
 
 # Check if running
-docker-compose ps weather-sql
+docker compose ps weather-sql
 
 # Restart service
-docker-compose restart weather-sql
+docker compose restart weather-sql
 ```
 
 ### Database Queries
@@ -180,7 +180,7 @@ LIMIT 100;
 
 ```bash
 # Check logs
-docker-compose logs weather-sql
+docker compose logs weather-sql
 
 # Common issues:
 # 1. PostgreSQL not ready (wait for health check)

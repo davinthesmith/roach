@@ -41,21 +41,16 @@ Access Kafka UI: http://localhost:8080
 
 ## Documentation
 
-### Core Docs
-- **[Architecture](docs/architecture.md)** - System design, components, data flow
-- **[Configuration](docs/configuration.md)** - Environment variables, settings
-- **[Operations](docs/operations.md)** - Start, stop, monitor, maintain
-- **[Go Standards](docs/go-standards.md)** - Go code organization and best practices
+**Start here**: [AI-CONTEXT.md](docs/AI-CONTEXT.md) - Consolidated context covering 80% of what you need
 
-### Reference
-- **[Kafka Topics](docs/kafka-topics.md)** - Topic schemas and message formats
-- **[API Reference](docs/api-reference.md)** - Commands and CLI tools
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-
-### Services
-- **[Weather Service](docs/weather-service.md)** - WeatherLink integration details
-
-### Other
+### Core Documentation
+- **[AI-CONTEXT.md](docs/AI-CONTEXT.md)** - **Start here** - Complete overview, architecture, operations, services, troubleshooting
+- **[Architecture](docs/architecture.md)** - Detailed system design and specifications
+- **[Operations](docs/operations.md)** - Advanced operations and maintenance
+- **[Troubleshooting](docs/troubleshooting.md)** - Comprehensive problem solving
+- **[Go Standards](docs/go-standards.md)** - Complete code organization standards
+- **[Kafka Topics](docs/kafka-topics.md)** - Full topic schemas and message formats
+- **[Migrations](docs/migrations.md)** - Database migration framework
 - **[Changelog](CHANGELOG.md)** - Version history and changes
 
 ## Project Structure
@@ -67,7 +62,8 @@ roach/
 ├── scripts/                           # Helper scripts
 ├── docs/                              # Documentation
 ├── services/                          # Service implementations
-│   └── weather/                      # Weather service
+│   ├── weather-publish/              # Weather publisher service
+│   └── weather-sql/                  # Weather SQL materializer
 └── data/                             # Persistent data
 ```
 
@@ -91,7 +87,7 @@ WEATHERLINK_STATION_ID=your_station_id
 POSTGRES_PASSWORD=your_secure_password
 ```
 
-See [Configuration](docs/configuration.md) for all options.
+See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 
 ## Common Commands
 
@@ -124,7 +120,7 @@ See [Configuration](docs/configuration.md) for all options.
 ./scripts/stop-all.sh
 ```
 
-See [API Reference](docs/api-reference.md) for complete command list.
+See [Operations](docs/operations.md) for complete command reference.
 
 ## Topics
 

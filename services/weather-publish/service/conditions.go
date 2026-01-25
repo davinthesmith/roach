@@ -42,33 +42,36 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 				timestamp = int64(ts)
 			}
 
-			// Check if we've already published this timestamp for this sensor
-			if timestamp > 0 && s.checkDuplicate(sensor.LSID, timestamp) {
-				messagesSkipped++
-				continue
-			}
+		// Check if we've already published this timestamp for this sensor
+		if timestamp > 0 && s.checkDuplicate(sensor.LSID, timestamp) {
+			messagesSkipped++
+			continue
+		}
 
-			headers := map[string]string{
-				"lsid":                strconv.Itoa(sensor.LSID),
-				"timestamp":           strconv.FormatInt(timestamp, 10),
-				"station_id":          strconv.Itoa(response.StationID),
-				"station_id_uuid":     response.StationIDUUID,
-				"sensor_type":         strconv.Itoa(sensor.SensorType),
-				"data_structure_type": strconv.Itoa(sensor.DataStructureType),
-				"category":            metadata.Category,
-				"product_name":        metadata.ProductName,
-			}
+		// Generate unique message key using lsid:timestamp
+		key := strconv.Itoa(sensor.LSID) + ":" + strconv.FormatInt(timestamp, 10)
 
-			if err := s.producer.Publish(ctx, topic, dataPoint, headers); err != nil {
-				log.Printf("Failed to publish data point: %v", err)
-			} else {
-				messagesPublished++
+		headers := map[string]string{
+			"lsid":                strconv.Itoa(sensor.LSID),
+			"timestamp":           strconv.FormatInt(timestamp, 10),
+			"station_id":          strconv.Itoa(response.StationID),
+			"station_id_uuid":     response.StationIDUUID,
+			"sensor_type":         strconv.Itoa(sensor.SensorType),
+			"data_structure_type": strconv.Itoa(sensor.DataStructureType),
+			"category":            metadata.Category,
+			"product_name":        metadata.ProductName,
+		}
 
-				// Update timestamp cache
-				if timestamp > 0 {
-					s.updateCache(sensor.LSID, timestamp)
-				}
+		if err := s.producer.Publish(ctx, topic, key, dataPoint, headers); err != nil {
+			log.Printf("Failed to publish data point: %v", err)
+		} else {
+			messagesPublished++
+
+			// Update timestamp cache
+			if timestamp > 0 {
+				s.updateCache(sensor.LSID, timestamp)
 			}
+		}
 		}
 	}
 

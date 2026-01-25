@@ -1,52 +1,70 @@
 # Operations
 
-## Starting the System
+> **For basics, see [AI-CONTEXT.md](AI-CONTEXT.md)**. This document covers advanced operations and maintenance procedures.
 
-### Start Everything
+## System Management
+
+### Starting Services
+
 ```bash
-# Normal start
+# Complete startup
 ./scripts/start-all.sh
 
-# Start with rebuild (after code changes)
+# With rebuild (after code changes)
 ./scripts/start-all.sh build
-```
 
-The `build` option rebuilds all containers before starting them. Use this after modifying service code.
-
-### Start Infrastructure Only
-```bash
+# Infrastructure only
 ./scripts/start-infra.sh
-```
 
-### Start with Manual Control
-```bash
-# Infrastructure + Services
+# Manual control with compose files
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d
-
-# Watch logs while starting
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up
 ```
 
-## Stopping the System
+### Stopping Services
 
-### Stop All Services
 ```bash
+# Stop all
 ./scripts/stop-all.sh
+
+# Stop and remove volumes (clean slate)
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -v
 ```
 
-### Stop and Remove Data (Clean Slate)
+### Restarting Services
+
 ```bash
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -v
+# Restart all
+./scripts/restart.sh
+
+# Restart specific service
+./scripts/restart.sh weather-publish
+./scripts/restart.sh weather-sql
+./scripts/restart.sh postgres
+
+# Rebuild specific service after code changes
+docker compose build weather-publish
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weather-publish
 ```
 
 ## Monitoring
 
 ### System Status
+
 ```bash
+# Overall status
 ./scripts/status.sh
+
+# Container list with health
+docker ps
+
+# Resource usage (real-time)
+docker stats
+
+# Specific container
+docker stats roach-kafka
 ```
 
-### View Logs
+### Logs
 
 ```bash
 # All services
@@ -57,62 +75,38 @@ docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -
 ./scripts/logs.sh weather-sql
 ./scripts/logs.sh kafka
 ./scripts/logs.sh postgres
-./scripts/logs.sh zookeeper
+
+# Follow logs
+docker logs -f roach-weather-publish
 
 # Last N lines
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --tail=100
-
-# Follow logs
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs -f weather-publish
 ```
 
-### Check Service Health
+### Health Checks
+
+**Expected startup sequence**: Zookeeper (5-10s) → Kafka (20-30s) → PostgreSQL (5-10s) → Services
+
 ```bash
-# List running containers with health status
-docker ps
+# Check health status
+docker ps  # Look for "(healthy)" on kafka, postgres, zookeeper
 
 # Detailed health info
 docker inspect roach-kafka | grep -A 10 Health
 ```
 
 ### Kafka UI
-Access at: http://localhost:8080
 
-Features:
-- View topics and messages
-- Monitor consumer groups
-- Check broker health
-- Inspect message headers and payloads
+Access: http://localhost:8080
 
-## Restarting Services
-
-### Restart Specific Service
-```bash
-./scripts/restart.sh weather-publish
-./scripts/restart.sh weather-sql
-./scripts/restart.sh postgres
-```
-
-### Restart All Services
-```bash
-./scripts/restart.sh
-```
-
-### Restart After Code Changes
-```bash
-# Option 1: Rebuild specific service
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d --build weather-publish
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d --build weather-sql
-
-# Option 2: Rebuild and restart all services
-./scripts/start-all.sh build
-```
+**Features**: Browse topics/messages, monitor consumer groups, check broker health, inspect configs
 
 ## Database Operations
 
 ### Query Database
+
 ```bash
-# Show statistics
+# Statistics
 ./scripts/db/query.sh stats
 
 # List devices
@@ -123,287 +117,394 @@ docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d 
 
 # Recent records
 ./scripts/db/query.sh recent
-
-# Recent records for specific device
-./scripts/db/query.sh recent 918290
+./scripts/db/query.sh recent 918290  # For specific device
 
 # Check orphaned messages
 ./scripts/db/query.sh orphans
 
-# Interactive psql
+# Interactive psql session
 ./scripts/db/query.sh psql
 ```
 
-### Backup Database
+### Database Migrations
+
 ```bash
-# Dump database
+# View migration status
+./scripts/db/migrate.sh status
+
+# Apply all pending migrations
+./scripts/db/migrate.sh up
+
+# Rollback last migration (prompts for confirmation)
+./scripts/db/migrate.sh down
+
+# Create new migration
+./scripts/db/migrate.sh create add_new_column
+# Edit generated files:
+# - scripts/db/migrations/NNN_add_new_column.up.sql
+# - scripts/db/migrations/NNN_add_new_column.down.sql
+```
+
+**Migration best practices**:
+1. Always create both up and down migrations
+2. Test rollback before applying in production
+3. Use IF EXISTS/IF NOT EXISTS for idempotency
+4. Backup data before migrations
+5. Review migration status after applying
+
+### Reprocess Orphaned Messages
+
+```bash
+# Interactive tool to reprocess messages that failed
+./scripts/db/reload-orphans.sh
+```
+
+### Backup and Restore
+
+**Database backup**:
+```bash
+# Dump to SQL
 docker exec roach-postgres pg_dump -U roach roach > backup-$(date +%Y%m%d).sql
 
-# Or backup entire data directory
+# Or backup data directory (requires services stopped)
 ./scripts/stop-all.sh
 tar -czf postgres-backup-$(date +%Y%m%d).tar.gz data/postgres/
 ./scripts/start-all.sh
 ```
 
-### Restore Database
+**Database restore**:
 ```bash
 # From SQL dump
 cat backup.sql | docker exec -i roach-postgres psql -U roach -d roach
 ```
 
-## Database Migrations
-
-ROACH includes a migration framework for managing database schema changes.
-
-### View Migration Status
+**Full data backup** (Kafka + Zookeeper + PostgreSQL):
 ```bash
-./scripts/db/migrate.sh status
+./scripts/stop-all.sh
+tar -czf roach-backup-$(date +%Y%m%d).tar.gz data/
+./scripts/start-all.sh
 ```
 
-Shows all migrations with their status (applied or pending).
-
-### Apply Migrations
+**Full data restore**:
 ```bash
-# Apply all pending migrations
-./scripts/db/migrate.sh up
-```
-
-Migrations are applied in order. Each migration is tracked in the `schema_migrations` table.
-
-### Rollback Migration
-```bash
-# Rollback the last applied migration
-./scripts/db/migrate.sh down
-```
-
-This will prompt for confirmation before rolling back.
-
-### Create New Migration
-```bash
-# Create new migration files
-./scripts/db/migrate.sh create add_new_column
-
-# This creates:
-# - scripts/db/migrations/NNN_add_new_column.up.sql
-# - scripts/db/migrations/NNN_add_new_column.down.sql
-```
-
-Edit the generated files to add your SQL changes:
-- `.up.sql` - Forward migration (adding changes)
-- `.down.sql` - Rollback migration (reverting changes)
-
-### Migration Best Practices
-
-1. **Always create both up and down migrations** for reversibility
-2. **Test rollback** before applying in production
-3. **Use IF EXISTS/IF NOT EXISTS** for idempotent migrations
-4. **Backup data** before running migrations on production
-5. **Review migration status** after applying
-
-### Reprocess Orphaned Messages
-```bash
-# Interactive tool
-./scripts/db/reload-orphans.sh
+./scripts/stop-all.sh
+rm -rf data/
+tar -xzf roach-backup-YYYYMMDD.tar.gz
+./scripts/start-all.sh
 ```
 
 ## Kafka Operations
 
-### List Topics
+### Topics Management
+
 ```bash
+# List all topics
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
+
+# View topic details
+docker exec roach-kafka kafka-topics \
+  --describe \
+  --topic weather.iss \
+  --bootstrap-server localhost:29092
+
+# Create topic manually (usually auto-created)
+docker exec roach-kafka kafka-topics \
+  --create \
+  --topic test.topic \
+  --partitions 1 \
+  --replication-factor 1 \
+  --bootstrap-server localhost:29092
+
+# Delete topic
+docker exec roach-kafka kafka-topics \
+  --delete \
+  --topic test.topic \
+  --bootstrap-server localhost:29092
 ```
 
-### View Topic Details
-```bash
-docker exec roach-kafka kafka-topics --describe --topic weather.iss --bootstrap-server localhost:29092
-```
+### Consuming Messages
 
-### Consume Messages
 ```bash
-# Last 10 messages
+# Last 10 messages from beginning
 docker exec roach-kafka kafka-console-consumer \
   --bootstrap-server localhost:29092 \
   --topic weather.iss \
   --from-beginning \
   --max-messages 10
 
+# Latest messages (follow)
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.iss
+
 # With headers
 docker exec roach-kafka kafka-console-consumer \
   --bootstrap-server localhost:29092 \
   --topic weather.iss \
   --property print.headers=true \
-  --from-beginning \
-  --max-messages 5
+  --property print.timestamp=true \
+  --from-beginning
 ```
 
-### Delete Topic (if needed)
+### Consumer Groups
+
 ```bash
-docker exec roach-kafka kafka-topics \
-  --delete \
-  --topic topic-name \
+# List consumer groups
+docker exec roach-kafka kafka-consumer-groups \
+  --list \
+  --bootstrap-server localhost:29092
+
+# Describe consumer group
+docker exec roach-kafka kafka-consumer-groups \
+  --describe \
+  --group weather-sql-data-iss \
+  --bootstrap-server localhost:29092
+```
+
+### Broker Information
+
+```bash
+# Check broker API versions
+docker exec roach-kafka kafka-broker-api-versions \
+  --bootstrap-server localhost:29092
+
+# Cluster metadata
+docker exec roach-kafka kafka-metadata \
   --bootstrap-server localhost:29092
 ```
 
 ## Maintenance
 
 ### Disk Usage Monitoring
+
 ```bash
 # Check data directory size
 du -sh data/
 
 # Breakdown by component
-du -sh data/kafka
-du -sh data/zookeeper
-du -sh data/postgres
+du -sh data/kafka data/zookeeper data/postgres
 
 # System disk usage
 df -h
 ```
 
-### Backup Data
+### Service Updates
+
+**After code changes**:
 ```bash
-# Stop services first
-./scripts/stop-all.sh
-
-# Backup
-tar -czf kafka-backup-$(date +%Y%m%d).tar.gz data/
-
-# Restart
-./scripts/start-all.sh
-```
-
-### Restore Data
-```bash
-# Stop services
-./scripts/stop-all.sh
-
-# Remove current data
-rm -rf data/
-
-# Restore from backup
-tar -xzf kafka-backup-YYYYMMDD.tar.gz
-
-# Restart
-./scripts/start-all.sh
-```
-
-### Update Service Code
-
-```bash
-# 1. Edit code
-nano services/weather/main.go
-
-# 2. Option A: Rebuild specific service
-docker compose build weather-publish
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weather-publish
-
-# 2. Option B: Rebuild all services
+# Method 1: Rebuild all services
 ./scripts/start-all.sh build
 
-# 3. Check logs
-./scripts/logs.sh weather-publish
+# Method 2: Rebuild specific service
+cd services/weather-publish
+# ... make changes ...
+docker compose build weather-publish
+docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up -d weather-publish
+./scripts/logs.sh weather-publish  # Check logs
+```
+
+### Credential Rotation
+
+**Update API credentials**:
+```bash
+# 1. Edit .env file
+nano .env
+
+# 2. Restart affected service
+./scripts/restart.sh weather-publish
+```
+
+**Update PostgreSQL password**:
+```bash
+# 1. Edit .env file
+nano .env
+
+# 2. Restart infrastructure and all services
+./scripts/stop-all.sh
+./scripts/start-all.sh
 ```
 
 ## Development Workflow
 
-### Work on Service Locally
+### Local Service Development
 
 ```bash
-# 1. Start infrastructure
+# 1. Start infrastructure only
 ./scripts/start-infra.sh
 
-# 2. Develop service
-cd services/weather
-# ... make changes ...
-
-# 3. Test locally (without Docker)
+# 2. Develop service locally (outside Docker)
+cd services/weather-publish
 export KAFKA_BROKER=localhost:9092
+export POSTGRES_DSN="host=localhost port=5432 user=roach password=yourpass dbname=roach sslmode=disable"
 export WEATHERLINK_API_KEY=your_key
 export WEATHERLINK_API_SECRET=your_secret
 export WEATHERLINK_STATION_ID=your_station
 go run main.go
 
-# 4. Or test in Docker
-docker compose build weather
-docker compose up weather
+# 3. Or test in Docker
+docker compose build weather-publish
+docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up weather-publish
 ```
 
-### Debug Container
+### Debugging Containers
 
 ```bash
 # Enter running container
 docker exec -it roach-weather-publish sh
 
-# Check environment
+# Check environment variables
 docker exec roach-weather-publish env
 
 # View files
 docker exec roach-weather-publish ls -la
-```
 
-## Health Checks
-
-### Expected Startup Sequence
-
-1. Zookeeper starts (5-10 seconds)
-2. Zookeeper becomes healthy
-3. Kafka starts (20-30 seconds)
-4. Kafka becomes healthy
-5. PostgreSQL starts (5-10 seconds)
-6. PostgreSQL becomes healthy
-7. Weather Publisher starts
-8. Weather SQL starts
-9. Kafka UI starts
-
-### Verify Health
-
-```bash
-# Check all services
-docker ps
-
-# Look for "(healthy)" status on:
-# - roach-zookeeper
-# - roach-kafka
-# - roach-postgres
-
-# Services should show "Up":
-# - roach-weather-publish
-# - roach-weather-sql
-# - roach-kafka-ui
+# Check connectivity
+docker exec roach-weather-publish nc -zv kafka 29092
+docker exec roach-weather-publish nc -zv postgres 5432
 ```
 
 ## Performance Monitoring
 
 ### Resource Usage
+
 ```bash
-# Real-time stats
+# Real-time stats for all containers
 docker stats
 
 # Specific container
 docker stats roach-kafka
+
+# Log sizes
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --no-log-prefix weather-publish | wc -l
 ```
 
-### Log File Sizes
-```bash
-# Check log sizes
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --no-log-prefix weather | wc -l
+### Performance Tuning
+
+**Reduce API call frequency**:
+```yaml
+# docker-compose.yml
+services:
+  weather-publish:
+    environment:
+      - FETCH_INTERVAL=10m  # Increase from 5m
 ```
 
-## Security Operations
-
-### Rotate API Credentials
-
-```bash
-# 1. Update .env file
-nano .env
-
-# 2. Restart services
-./scripts/restart.sh weather-publish
+**Increase logging verbosity for debugging**:
+```yaml
+services:
+  weather-publish:
+    environment:
+      - LOG_LEVEL=debug
 ```
 
-### View Service Credentials (debugging)
+**Decrease logging for production**:
+```yaml
+services:
+  weather-publish:
+    environment:
+      - LOG_LEVEL=warn
+```
+
+## Docker Management
+
+### Container Management
+
 ```bash
-# Never log these in production
-docker exec roach-weather-publish env | grep WEATHERLINK
-docker exec roach-weather-publish env | grep POSTGRES
+# List containers
+docker ps
+docker ps -a  # Include stopped
+
+# Inspect container
+docker inspect roach-kafka
+docker inspect roach-kafka | grep IPAddress
+
+# Container logs
+docker logs roach-kafka
+docker logs -f roach-kafka  # Follow
+docker logs --tail=100 roach-kafka  # Last 100 lines
+```
+
+### Image Management
+
+```bash
+# List images
+docker images
+
+# Remove unused images
+docker image prune
+
+# Pull latest image
+docker pull confluentinc/cp-kafka:7.5.0
+```
+
+### Network Management
+
+```bash
+# List networks
+docker network ls
+
+# Inspect roach network
+docker network inspect roach-network
+
+# Recreate network (if issues)
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down
+docker network rm roach-network
+./scripts/start-all.sh
+```
+
+### Volume Management
+
+```bash
+# List volumes
+docker volume ls
+
+# Inspect volume
+docker volume inspect roach_kafka-data
+
+# Clean up unused volumes
+docker volume prune
+```
+
+## Validation and Testing
+
+### Configuration Validation
+
+```bash
+# View resolved configuration
+docker compose config
+
+# Verify environment variables loaded
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml config | grep WEATHERLINK
+```
+
+### Connectivity Testing
+
+```bash
+# Test Kafka
+docker exec roach-kafka kafka-broker-api-versions --bootstrap-server localhost:29092
+
+# Test PostgreSQL
+docker exec roach-postgres pg_isready -U roach
+docker exec -it roach-postgres psql -U roach -d roach
+
+# Test from services
+docker exec roach-weather-publish nc -zv kafka 29092
+docker exec roach-weather-sql nc -zv postgres 5432
+```
+
+### Service Health Verification
+
+```bash
+# Check all containers are running
+docker ps
+
+# Verify services processing data
+./scripts/logs.sh weather-publish | tail -20
+./scripts/logs.sh weather-sql | tail -20
+
+# Check Kafka topics have messages
+docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
+
+# Check database has data
+./scripts/db/query.sh stats
 ```

@@ -21,12 +21,14 @@ func NewProducer(broker string) *Producer {
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 			Async:                  false,
+			RequiredAcks:           kafka.RequireAll, // Ensure all replicas acknowledge
+			MaxAttempts:            3,                // Retry up to 3 times on transient failures
 		},
 	}
 }
 
-// Publish publishes data to a Kafka topic with headers
-func (p *Producer) Publish(ctx context.Context, topic string, data interface{}, headers map[string]string) error {
+// Publish publishes data to a Kafka topic with key and headers
+func (p *Producer) Publish(ctx context.Context, topic string, key string, data interface{}, headers map[string]string) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -34,15 +36,16 @@ func (p *Producer) Publish(ctx context.Context, topic string, data interface{}, 
 
 	// Convert headers to kafka.Header format
 	kafkaHeaders := make([]kafka.Header, 0, len(headers))
-	for key, value := range headers {
+	for k, value := range headers {
 		kafkaHeaders = append(kafkaHeaders, kafka.Header{
-			Key:   key,
+			Key:   k,
 			Value: []byte(value),
 		})
 	}
 
 	msg := kafka.Message{
 		Topic:   topic,
+		Key:     []byte(key),
 		Value:   jsonData,
 		Headers: kafkaHeaders,
 		Time:    time.Now(),

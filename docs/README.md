@@ -1,74 +1,33 @@
 # ROACH Documentation
 
-## Purpose
-This documentation is optimized for AI agent consumption to understand and work with the ROACH project.
+**For AI Agents**: Start with [AI-CONTEXT.md](AI-CONTEXT.md) - single file with 80% of what you need (740 lines).
 
-## Documentation Guidelines for AI Agents
+## Documentation Structure
+
+### Quick Start (Read First)
+- **[AI-CONTEXT.md](AI-CONTEXT.md)** - **START HERE** - Consolidated context covering system overview, architecture, configuration, operations, services, topics, database, troubleshooting, and code standards
+
+### Deep Dive References
+- **[architecture.md](architecture.md)** - Detailed component specifications, network details, resource metrics
+- **[operations.md](operations.md)** - Advanced operations, maintenance procedures, database operations
+- **[troubleshooting.md](troubleshooting.md)** - Comprehensive problem solving, all known issues and solutions
+- **[go-standards.md](go-standards.md)** - Complete Go code organization standards and patterns
+- **[kafka-topics.md](kafka-topics.md)** - Full topic schemas, all fields, message formats
+- **[migrations.md](migrations.md)** - Database migration framework details
+
+## Usage Guide
+
+**For general tasks**: Read [AI-CONTEXT.md](AI-CONTEXT.md) (1 file, covers 80% of needs)
+
+**For specific deep dives**:
+- System design questions → [architecture.md](architecture.md)
+- Operational issues → [operations.md](operations.md)
+- Problems/errors → [troubleshooting.md](troubleshooting.md)
+- Code organization → [go-standards.md](go-standards.md)
+- Topic schemas → [kafka-topics.md](kafka-topics.md)
+
+## Documentation Guidelines
 
 **IMPORTANT**: When working with this project:
-1. **DO NOT generate additional .md files in the project root directory**
-   - New documentation belongs in `docs/` directory
-   - Updates to existing content go in README.md, docs/README.md, or specific doc files
-   
-2. **NO historical information outside of CHANGELOG.md**
-   - All changes, fixes, and updates belong in CHANGELOG.md
-   - Do not create summary files, fix logs, or historical documentation elsewhere
-   - Documentation files should reflect current state only, not history
-
-## Structure
-
-### Start Here
-- **[quick-reference.md](quick-reference.md)** - **START HERE** - Essential info in <1 page
-
-### Core Documentation
-- **[architecture.md](architecture.md)** - System architecture, data flow, components
-- **[configuration.md](configuration.md)** - Environment variables, settings, customization
-- **[operations.md](operations.md)** - Running, monitoring, maintaining the system
-- **[go-standards.md](go-standards.md)** - Go code organization standards and best practices
-
-### Reference
-- **[kafka-topics.md](kafka-topics.md)** - Topic naming, schemas, message structures
-- **[api-reference.md](api-reference.md)** - Command reference, API endpoints
-- **[migrations.md](migrations.md)** - Database migration framework
-- **[troubleshooting.md](troubleshooting.md)** - Common issues and solutions
-
-### Services
-- **[weather-service.md](weather-service.md)** - Weather publisher and SQL materializer services
-
-### Database
-- **PostgreSQL** - Time-series data storage with Device/Tag/Record hierarchy
-- **[Migrations](migrations.md)** - Schema migration framework with version tracking
-
-## How to Use This Documentation
-
-### For AI Agents - Quick Start
-**Read `quick-reference.md` first** - Contains all essential info in one page.
-
-For complete context, read in order:
-1. `quick-reference.md` - Essential overview
-2. `architecture.md` - Understand the system
-3. `configuration.md` - Know what can be configured
-4. `operations.md` - Learn how to operate it
-5. `kafka-topics.md` - Understand data organization
-6. Service-specific docs as needed
-
-### For Quick Tasks
-- **Start/stop system**: See `quick-reference.md` or `operations.md`
-- **Add new service**: See `architecture.md` → Extension Points
-- **Debug issues**: See `troubleshooting.md`
-- **Configure settings**: See `configuration.md`
-
-### For Development
-- **Service structure**: See `architecture.md` → Services
-- **Go code standards**: See `go-standards.md`
-- **Kafka integration**: See `kafka-topics.md`
-- **API reference**: See `api-reference.md`
-
-## Documentation Principles
-
-1. **Concise**: Only essential information, no verbosity
-2. **Structured**: Hierarchical organization for easy parsing
-3. **Actionable**: Commands and code examples included
-4. **Current**: Reflects actual implementation, not aspirational
-5. **Context-rich**: Enough detail for autonomous AI agents
-6. **No History**: Historical information belongs in CHANGELOG.md only
+1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory
+2. **NO historical information outside of CHANGELOG.md** - All changes, fixes, and updates belong in CHANGELOG.md only

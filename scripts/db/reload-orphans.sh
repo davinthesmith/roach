@@ -19,8 +19,8 @@ echo
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Restarting weather-sql service to reprocess orphaned messages..."
-    docker-compose restart weather-sql
-    echo "Service restarted. Monitor logs with: docker-compose logs -f weather-sql"
+    docker compose restart weather-sql
+    echo "Service restarted. Monitor logs with: docker compose logs -f weather-sql"
 else
     echo "Cancelled."
 fi

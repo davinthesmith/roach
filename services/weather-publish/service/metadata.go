@@ -36,8 +36,11 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 		s.sensorMap[sensor.LSID] = sensor
 		s.sensorTypes[sensor.SensorType] = true
 
+		// Generate unique key for sensor metadata: lsid:{lsid}
+		key := "lsid:" + strconv.Itoa(sensor.LSID)
+
 		// Publish each sensor to metadata topic
-		if err := s.producer.Publish(ctx, "weather.metadata.sensors", sensor, map[string]string{
+		if err := s.producer.Publish(ctx, "weather.metadata.sensors", key, sensor, map[string]string{
 			"lsid":        strconv.Itoa(sensor.LSID),
 			"sensor_type": strconv.Itoa(sensor.SensorType),
 			"category":    sensor.Category,
@@ -90,8 +93,11 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 		return nil
 	}
 
+	// Generate key for catalog - using a constant since there's only one catalog
+	key := "catalog"
+
 	// Publish filtered catalog to metadata topic
-	if err := s.producer.Publish(ctx, "weather.metadata.catalog", filteredCatalog, map[string]string{
+	if err := s.producer.Publish(ctx, "weather.metadata.catalog", key, filteredCatalog, map[string]string{
 		"entry_count": strconv.Itoa(len(filteredCatalog.SensorCatalog)),
 	}); err != nil {
 		return err
@@ -123,8 +129,11 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 		return nil
 	}
 
+	// Generate key for station info: station:{station_id}
+	key := "station:" + s.config.WeatherLinkStationID
+
 	// Publish station info to metadata topic
-	if err := s.producer.Publish(ctx, "weather.metadata.station", response, map[string]string{
+	if err := s.producer.Publish(ctx, "weather.metadata.station", key, response, map[string]string{
 		"station_id": s.config.WeatherLinkStationID,
 	}); err != nil {
 		return err

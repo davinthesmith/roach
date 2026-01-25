@@ -68,13 +68,13 @@ LOG_LEVEL=info                     # Logging level (debug, info, warn, error)
 
 ```bash
 # From project root
-docker-compose up weather
+docker compose up weather-publish
 ```
 
 ### Standalone with Go
 
 ```bash
-cd services/weather
+cd services/weather-publish
 
 # Install dependencies
 go mod download
@@ -94,7 +94,7 @@ go run main.go
 ### Project Structure
 
 ```
-services/weather/
+services/weather-publish/
 ├── main.go              # Main service code
 ├── go.mod              # Go module definition
 ├── go.sum              # Dependency checksums
@@ -118,7 +118,7 @@ services/weather/
 go build -o weather-service main.go
 
 # Build Docker image
-docker build -t roach-weather .
+docker build -t roach-weather-publish .
 ```
 
 ## How It Works
@@ -241,7 +241,7 @@ Import these into Postman to explore available endpoints.
 
 ```bash
 # Check logs
-docker-compose logs weather
+docker compose logs weather-publish
 
 # Common issues:
 # 1. Missing API credentials
@@ -254,7 +254,7 @@ docker-compose logs weather
 1. Verify API credentials are correct
 2. Check station ID matches your WeatherLink account
 3. Ensure Kafka is reachable at configured broker address
-4. Look for errors in logs: `docker-compose logs -f weather`
+4. Look for errors in logs: `docker compose logs -f weather-publish`
 
 ### API Errors
 
@@ -266,7 +266,7 @@ docker-compose logs weather
 
 ```bash
 # Test Kafka connection
-docker-compose exec weather nc -zv kafka 29092
+docker compose exec weather-publish nc -zv kafka 29092
 
 # Test WeatherLink API
 curl "https://api.weatherlink.com/v2/version?api-key=YOUR_KEY"
@@ -278,13 +278,13 @@ curl "https://api.weatherlink.com/v2/version?api-key=YOUR_KEY"
 
 ```bash
 # View logs in real-time
-docker-compose logs -f weather
+docker compose logs -f weather-publish
 
 # Check if service is running
-docker-compose ps weather
+docker compose ps weather-publish
 
 # Restart service
-docker-compose restart weather
+docker compose restart weather-publish
 ```
 
 ### Verify Data Flow
