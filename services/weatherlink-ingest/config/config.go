@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"weather/models"
+	"github.com/roach/weatherlink-lib/models"
 )
 
 // Load reads configuration from environment variables

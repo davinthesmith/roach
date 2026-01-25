@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"weather/api"
-	"weather/kafka"
-	"weather/models"
+	"github.com/roach/weatherlink-lib/api"
+	"github.com/roach/weatherlink-lib/kafka"
+	"github.com/roach/weatherlink-lib/models"
 )
 
 // Service manages the weather data collection

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"weather/models"
+	"github.com/roach/weatherlink-lib/models"
 )
 
 // FetchCurrentConditions fetches current conditions from the WeatherLink API
@@ -77,6 +77,37 @@ func (c *Client) FetchStationInfo() (*models.StationResponse, error) {
 	var response models.StationResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse station info: %w", err)
+	}
+
+	return &response, nil
+}
+
+// FetchHistoricData fetches historical data for a time window
+// startTs and endTs are Unix timestamps (seconds)
+// Window must be <= 86400 seconds (24 hours)
+func (c *Client) FetchHistoricData(startTs, endTs int64) (*models.CurrentConditionsResponse, error) {
+	// Validate time window
+	const maxWindow = 86400 // 24 hours in seconds
+	if endTs-startTs > maxWindow {
+		return nil, fmt.Errorf("time window exceeds 24 hours: %d seconds (max: %d)", endTs-startTs, maxWindow)
+	}
+	
+	if startTs >= endTs {
+		return nil, fmt.Errorf("start timestamp must be before end timestamp")
+	}
+
+	url := fmt.Sprintf("https://api.weatherlink.com/v2/historic/%s?api-key=%s&start-timestamp=%d&end-timestamp=%d",
+		c.stationID, c.apiKey, startTs, endTs)
+
+	log.Printf("Fetching historic data from %d to %d (%d seconds)...", startTs, endTs, endTs-startTs)
+	body, err := c.makeRequest(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch historic data: %w", err)
+	}
+
+	var response models.CurrentConditionsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse historic data: %w", err)
 	}
 
 	return &response, nil

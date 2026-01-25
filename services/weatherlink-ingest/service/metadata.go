@@ -7,8 +7,8 @@ import (
 	"log"
 	"strconv"
 
-	"weather/internal"
-	"weather/models"
+	"github.com/roach/weatherlink-lib/util"
+	"github.com/roach/weatherlink-lib/models"
 )
 
 // fetchSensorMetadata fetches sensor metadata from the API
@@ -25,7 +25,7 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 	}
 
 	// Check if metadata has changed
-	hash := internal.CalculateHash(body)
+	hash := util.CalculateHash(body)
 	if s.lastMetadataHash["sensors"] == hash {
 		log.Println("Sensor metadata unchanged, skipping publish")
 		return nil
@@ -86,7 +86,7 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 
 	// Calculate hash of all filtered entries to detect changes
 	filteredBody, _ := json.Marshal(filteredEntries)
-	hash := internal.CalculateHash(filteredBody)
+	hash := util.CalculateHash(filteredBody)
 	if s.lastMetadataHash["catalog"] == hash {
 		log.Println("Filtered catalog unchanged, skipping publish")
 		return nil
@@ -130,7 +130,7 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 	}
 
 	// Check if station info has changed
-	hash := internal.CalculateHash(body)
+	hash := util.CalculateHash(body)
 	if s.lastMetadataHash["station"] == hash {
 		log.Println("Station info unchanged, skipping publish")
 		return nil

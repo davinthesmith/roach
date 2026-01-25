@@ -1,5 +1,13 @@
 # ROACH Documentation
 
+## Documentation Guidelines
+
+**IMPORTANT**
+When working with this project:
+1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory. This documentation should be terse and optimized for AI Agents.
+2. **NO historical information outside of CHANGELOG.md** - All changes, fixes, checklists, summaries, and updates belong in CHANGELOG.md only
+**IMPORTANT**
+
 **For AI Agents**: Start with [AI-CONTEXT.md](AI-CONTEXT.md) - single file with 80% of what you need (740 lines).
 
 ## Documentation Structure
@@ -27,9 +35,3 @@
 - Code organization → [go-standards.md](go-standards.md)
 - Kafka best practices → [kafka-standards.md](kafka-standards.md)
 - Topic schemas → [kafka-topics.md](kafka-topics.md)
-
-## Documentation Guidelines
-
-**IMPORTANT**: When working with this project:
-1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory
-2. **NO historical information outside of CHANGELOG.md** - All changes, fixes, and updates belong in CHANGELOG.md only

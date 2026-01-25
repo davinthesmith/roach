@@ -10,9 +10,9 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"weather/api"
+	"github.com/roach/weatherlink-lib/api"
+	"github.com/roach/weatherlink-lib/kafka"
 	"weather/config"
-	"weather/kafka"
 	"weather/service"
 )
 

@@ -1,11 +1,11 @@
 # ROACH Application Services
 
 services:
-  weather-publish:
+  weatherlink-ingest:
     build:
-      context: ./services/weather-publish
-      dockerfile: Dockerfile
-    container_name: roach-weather-publish
+      context: ./services
+      dockerfile: weatherlink-ingest/Dockerfile
+    container_name: roach-weatherlink-ingest
     restart: unless-stopped
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
@@ -29,11 +29,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weather-sql:
+  weatherlink-materializer:
     build:
-      context: ./services/weather-sql
+      context: ./services/weatherlink-materializer
       dockerfile: Dockerfile
-    container_name: roach-weather-sql
+    container_name: roach-weatherlink-materializer
     restart: unless-stopped
     environment:
       - KAFKA_BROKER=kafka:29092
@@ -53,6 +53,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  weatherlink-backfill:
+    build:
+      context: ./services
+      dockerfile: weatherlink-backfill/Dockerfile
+    container_name: roach-weatherlink-backfill
+    environment:
+      - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
+      - WEATHERLINK_API_SECRET=${WEATHERLINK_API_SECRET}
+      - WEATHERLINK_STATION_ID=${WEATHERLINK_STATION_ID}
+      - KAFKA_BROKER=kafka:29092
+      - LOG_LEVEL=info
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - roach-network
+    profiles:
+      - tools  # Only start when explicitly requested
 
 # Use the shared network
 # Note: When running with -f docker-compose.infrastructure.yml -f docker-compose.yml,

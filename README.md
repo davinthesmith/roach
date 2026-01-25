@@ -31,7 +31,9 @@ Access Kafka UI: http://localhost:8080
 - PostgreSQL materialization with Device/Tag/Record hierarchy
 - Rich metadata capture with units and descriptions from API
 - Database migration framework with version tracking
+- Historical data backfill with automatic duplicate prevention
 - Timestamp-based deduplication
+- Conservative rate limiting for API compliance
 - Auto-restart on system boot
 - Web-based monitoring UI
 - Topic-based data organization
@@ -62,8 +64,10 @@ roach/
 ├── scripts/                           # Helper scripts
 ├── docs/                              # Documentation
 ├── services/                          # Service implementations
-│   ├── weather-publish/              # Weather publisher service
-│   └── weather-sql/                  # Weather SQL materializer
+│   ├── weatherlink-lib/              # Shared WeatherLink API client and models
+│   ├── weatherlink-ingest/           # Real-time data ingestion
+│   ├── weatherlink-materializer/     # Kafka → PostgreSQL
+│   └── weatherlink-backfill/         # Historical data backfill
 └── data/                             # Persistent data
 ```
 
@@ -102,8 +106,8 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/status.sh
 
 # View logs
-./scripts/logs.sh weather-publish
-./scripts/logs.sh weather-sql
+./scripts/logs.sh weatherlink-ingest
+./scripts/logs.sh weatherlink-materializer
 
 # Query database
 ./scripts/db/query.sh stats
@@ -113,6 +117,13 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/db/migrate.sh up      # Apply pending migrations
 ./scripts/db/migrate.sh down    # Rollback last migration
 
+# Historical data backfill
+./scripts/backfill.sh --start $(date -v-24H +%s)
+./scripts/backfill.sh --start 1768780863 --end 1768865863
+
+# Test backfill with small window
+./scripts/test-backfill.sh
+
 # Restart service
 ./scripts/restart.sh weather
 
@@ -121,6 +132,36 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ```
 
 See [Operations](docs/operations.md) for complete command reference.
+
+## Services
+
+### weatherlink-lib
+Shared library containing:
+- WeatherLink API client with authentication
+- Kafka producer with idempotent guarantees
+- Common data models and utilities
+
+### weatherlink-ingest
+Real-time data ingestion service:
+- Fetches current conditions every 5 minutes (configurable)
+- Publishes to Kafka topics based on sensor category
+- Automatic metadata updates daily
+- Timestamp-based duplicate prevention
+
+### weatherlink-materializer
+Kafka to PostgreSQL materializer:
+- Consumes from all weather topics
+- Stores time-series data in normalized tables
+- Enriches records with sensor metadata
+- Handles orphaned messages gracefully
+
+### weatherlink-backfill
+Historical data backfill tool:
+- Fetches historic data from WeatherLink API
+- Splits large ranges into 24-hour windows
+- Conservative rate limiting (8 req/s)
+- Idempotent producer prevents duplicates
+- Run manually as needed for historical data
 
 ## Topics
 

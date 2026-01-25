@@ -133,6 +133,50 @@ func (p *Producer) Publish(ctx context.Context, topic string, key string, data i
 	}
 }
 
+// PublishAsync publishes data to a Kafka topic asynchronously without waiting for delivery
+// This is much faster for bulk operations. Errors are logged via the event handler.
+func (p *Producer) PublishAsync(ctx context.Context, topic string, key string, data interface{}, headers map[string]string) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal data: %w", err)
+	}
+
+	// Convert headers to kafka.Header format
+	kafkaHeaders := make([]kafka.Header, 0, len(headers))
+	for k, value := range headers {
+		kafkaHeaders = append(kafkaHeaders, kafka.Header{
+			Key:   k,
+			Value: []byte(value),
+		})
+	}
+
+	// Create message
+	msg := &kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &topic,
+			Partition: kafka.PartitionAny,
+		},
+		Key:       []byte(key),
+		Value:     jsonData,
+		Headers:   kafkaHeaders,
+		Timestamp: time.Now(),
+	}
+
+	// Produce message (async - don't wait for delivery)
+	// Delivery reports are handled by the background goroutine
+	err = p.producer.Produce(msg, nil)
+	if err != nil {
+		return fmt.Errorf("failed to produce message: %w", err)
+	}
+
+	return nil
+}
+
+// Flush waits for all pending messages to be delivered
+func (p *Producer) Flush(timeoutMs int) int {
+	return p.producer.Flush(timeoutMs)
+}
+
 // Close flushes pending messages and closes the producer
 func (p *Producer) Close() error {
 	// Flush any outstanding messages (wait up to 10 seconds)
