@@ -1,0 +1,63 @@
+# ROACH Application Services
+
+services:
+  weather-publish:
+    build:
+      context: ./services/weather
+      dockerfile: Dockerfile
+    container_name: roach-weather-publish
+    restart: unless-stopped
+    environment:
+      - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
+      - WEATHERLINK_API_SECRET=${WEATHERLINK_API_SECRET}
+      - WEATHERLINK_STATION_ID=${WEATHERLINK_STATION_ID}
+      - KAFKA_BROKER=kafka:29092
+      - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
+      - FETCH_INTERVAL=5m
+      - LOG_LEVEL=info
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - roach-network
+    healthcheck:
+      test: pgrep -f weather-service || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  weather-sql:
+    build:
+      context: ./services/weather-sql
+      dockerfile: Dockerfile
+    container_name: roach-weather-sql
+    restart: unless-stopped
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
+      - LOG_LEVEL=info
+      - BATCH_SIZE=100
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - roach-network
+    healthcheck:
+      test: pgrep -f weather-sql || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Use the shared network
+# Note: When running with -f docker-compose.infrastructure.yml -f docker-compose.yml,
+# the network is created by infrastructure file. When running services alone,
+# make sure infrastructure is running first.
+networks:
+  roach-network:
+    name: roach-network

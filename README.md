@@ -1,0 +1,176 @@
+# ROACH — Real-time Observability Aggregation Conduit for the Home
+
+Kafka-based data aggregation system for home IoT and automation with infinite data persistence.
+
+## Overview
+
+ROACH is a scalable Kafka system designed to collect, persist, and stream data from home IoT devices. Currently includes WeatherLink weather station integration.
+
+## Quick Start
+
+```bash
+# Configure
+cp .env.example .env
+vim .env  # Add your WeatherLink credentials
+
+# Start
+./scripts/start-all.sh
+
+# Monitor
+./scripts/status.sh
+```
+
+Access Kafka UI: http://localhost:8080
+
+## Features
+
+- Infinite data retention in Kafka
+- PostgreSQL materialization with Device/Tag/Record hierarchy
+- Timestamp-based deduplication
+- Auto-restart on system boot
+- Web-based monitoring UI
+- Topic-based data organization
+- Change detection for metadata
+- Docker Compose infrastructure
+- Real-time data streaming and SQL storage
+
+## Documentation
+
+### Core Docs
+- **[Architecture](docs/architecture.md)** - System design, components, data flow
+- **[Configuration](docs/configuration.md)** - Environment variables, settings
+- **[Operations](docs/operations.md)** - Start, stop, monitor, maintain
+
+### Reference
+- **[Kafka Topics](docs/kafka-topics.md)** - Topic schemas and message formats
+- **[API Reference](docs/api-reference.md)** - Commands and CLI tools
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+
+### Services
+- **[Weather Service](docs/weather-service.md)** - WeatherLink integration details
+
+### Other
+- **[Changelog](CHANGELOG.md)** - Version history and changes
+
+## Project Structure
+
+```
+roach/
+├── docker-compose.infrastructure.yml  # Kafka, Zookeeper, UI
+├── docker-compose.yml                 # Application services
+├── scripts/                           # Helper scripts
+├── docs/                              # Documentation
+├── services/                          # Service implementations
+│   └── weather/                      # Weather service
+└── data/                             # Persistent data
+```
+
+## Prerequisites
+
+- Docker & Docker Compose
+- WeatherLink account with API credentials
+- (Optional) SSL certificates for external access
+
+## Configuration
+
+Required environment variables in `.env`:
+
+```bash
+# WeatherLink API
+WEATHERLINK_API_KEY=your_api_key
+WEATHERLINK_API_SECRET=your_api_secret
+WEATHERLINK_STATION_ID=your_station_id
+
+# PostgreSQL
+POSTGRES_PASSWORD=your_secure_password
+```
+
+See [Configuration](docs/configuration.md) for all options.
+
+## Common Commands
+
+```bash
+# Start everything
+./scripts/start-all.sh
+
+# View status
+./scripts/status.sh
+
+# View logs
+./scripts/logs.sh weather-publish
+./scripts/logs.sh weather-sql
+
+# Query database
+./scripts/db/query.sh stats
+
+# Restart service
+./scripts/restart.sh weather
+
+# Stop all
+./scripts/stop-all.sh
+```
+
+See [API Reference](docs/api-reference.md) for complete command list.
+
+## Topics
+
+Current Kafka topics:
+- `weather.iss` - Outdoor weather data
+- `weather.barometer` - Barometric pressure
+- `weather.indoor` - Indoor conditions
+- `weather.health` - Console health
+- `weather.metadata.*` - Sensor metadata
+
+PostgreSQL tables:
+- `devices` - Sensor registry
+- `tags` - Field definitions
+- `records_numeric`, `records_text`, `records_null` - Time-series data
+- `records` view - Unified query interface
+
+See [Kafka Topics](docs/kafka-topics.md) for schemas and message formats.
+
+## Adding Services
+
+1. Create service in `services/<name>/`
+2. Add to `docker-compose.yml`:
+```yaml
+services:
+  new-service:
+    build: ./services/new-service
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - roach-network
+```
+
+3. Use topic naming: `namespace.category.subcategory`
+
+See [Architecture](docs/architecture.md) for extension details.
+
+## Monitoring
+
+- **Kafka UI**: http://localhost:8080
+- **PostgreSQL**: localhost:5432 (user: roach, db: roach)
+- **Status Script**: `./scripts/status.sh`
+- **Database Query**: `./scripts/db/query.sh`
+- **Logs**: `./scripts/logs.sh`
+- **Docker Stats**: `docker stats`
+
+## Troubleshooting
+
+Common issues:
+- Services won't start → Check Docker running, ports available
+- Connection refused → Wait for Kafka health check (30-60s)
+- No data → Verify API credentials in `.env`
+
+See [Troubleshooting](docs/troubleshooting.md) for detailed solutions.
+
+## License
+
+Personal project - use as you wish.
