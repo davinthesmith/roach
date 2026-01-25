@@ -1,6 +1,6 @@
-# Weather Service
+# WeatherLink Ingest Service
 
-Go-based service that fetches weather data from the WeatherLink v2 API and publishes it to Kafka topics.
+Real-time data ingestion service that fetches weather data from the WeatherLink v2 API and publishes to Kafka topics.
 
 ## Overview
 
@@ -13,7 +13,7 @@ This service:
 ## Architecture
 
 ```
-WeatherLink API → Weather Service → Kafka Topics
+WeatherLink API → weatherlink-ingest → Kafka Topics
                        ↓
                  Change Detection
                  Hash Comparison
@@ -50,6 +50,7 @@ WEATHERLINK_STATION_ID=your_station_id_here
 
 # Optional
 KAFKA_BROKER=kafka:29092           # Kafka broker address
+POSTGRES_DSN=host=postgres...      # PostgreSQL for cache rehydration
 FETCH_INTERVAL=5m                  # How often to fetch data
 LOG_LEVEL=info                     # Logging level (debug, info, warn, error)
 ```
@@ -68,13 +69,13 @@ LOG_LEVEL=info                     # Logging level (debug, info, warn, error)
 
 ```bash
 # From project root
-docker compose up weather-publish
+docker compose up weatherlink-ingest
 ```
 
 ### Standalone with Go
 
 ```bash
-cd services/weather-publish
+cd services/weatherlink-ingest
 
 # Install dependencies
 go mod download
@@ -84,6 +85,7 @@ export WEATHERLINK_API_KEY=your_key
 export WEATHERLINK_API_SECRET=your_secret
 export WEATHERLINK_STATION_ID=your_station_id
 export KAFKA_BROKER=localhost:9092
+export POSTGRES_DSN="host=localhost port=5432 user=roach password=yourpass dbname=roach sslmode=disable"
 
 # Run
 go run main.go
@@ -94,45 +96,33 @@ go run main.go
 ### Project Structure
 
 ```
-services/weather-publish/
+services/weatherlink-ingest/
 ├── main.go              # Entry point
-├── go.mod               # Go module definition
+├── go.mod               # Go module (name: weather)
 ├── go.sum               # Dependency checksums
-├── Dockerfile           # Container build instructions
+├── Dockerfile           # Container build (binary: weather-service)
 ├── .env.example         # Environment template
 ├── README.md            # This file
-├── api/                 # WeatherLink API client
-│   ├── auth.go          # API authentication
-│   ├── client.go        # HTTP client implementation
-│   ├── weatherlink.go   # WeatherLink API wrapper
-│   ├── postman/         # API reference documentation
-│   │   ├── WeatherLink v2 API.postman_collection.json
-│   │   └── WeatherLink v2 API.postman_environment_sample.json
-│   └── snapshots/       # Sample API response snapshots
-│       └── api.weatherlink.com/
-│           ├── GET current.json
-│           ├── GET historic.json
-│           ├── GET sensor-catalog.json
-│           └── GET sensors.json
 ├── config/              # Configuration management
 │   └── config.go
-├── internal/            # Internal utilities
-│   └── hash.go          # Hashing functions for change detection
-├── kafka/               # Kafka client
-│   └── producer.go      # Message producer
-├── models/              # Data models
-│   └── types.go
 └── service/             # Core service logic
-    ├── cache.go         # Deduplication cache
+    ├── cache.go         # Deduplication cache with PostgreSQL rehydration
     ├── conditions.go    # Current conditions fetching
     ├── metadata.go      # Metadata management
     └── service.go       # Main service implementation
 ```
 
+**Shared Library**: This service uses `github.com/roach/weatherlink-lib` for:
+- `api/` - WeatherLink API client with HMAC authentication
+- `kafka/` - Kafka producer with idempotent guarantees
+- `models/` - Data models and type definitions
+- `util/` - Hash utilities for change detection
+
 ### Dependencies
 
-- `github.com/segmentio/kafka-go` - Kafka client library
-- `github.com/joho/godotenv` - Environment variable loader
+- `github.com/roach/weatherlink-lib` - Shared WeatherLink utilities
+- `github.com/confluentinc/confluent-kafka-go/v2` - Kafka client (idempotent)
+- `github.com/lib/pq` - PostgreSQL driver
 
 ### Building
 
@@ -141,7 +131,7 @@ services/weather-publish/
 go build -o weather-service main.go
 
 # Build Docker image
-docker build -t roach-weather-publish .
+docker build -t roach-weatherlink-ingest .
 ```
 
 ## How It Works
@@ -150,12 +140,14 @@ docker build -t roach-weather-publish .
 
 1. Load configuration from environment
 2. Connect to Kafka broker
-3. Fetch sensor metadata from WeatherLink API
-4. Fetch sensor catalog (field definitions)
-5. Fetch station information
-6. Publish metadata to respective topics (if changed)
-7. Build sensor routing map (LSID → topic)
-8. Start periodic data fetch loop
+3. Connect to PostgreSQL (for cache rehydration)
+4. Rehydrate timestamp cache from database (last 24 hours)
+5. Fetch sensor metadata from WeatherLink API
+6. Fetch sensor catalog (field definitions)
+7. Fetch station information
+8. Publish metadata to respective topics (if changed)
+9. Build sensor routing map (LSID → topic)
+10. Start periodic data fetch loop
 
 ### Data Collection Loop
 
@@ -167,7 +159,8 @@ Every 5 minutes (configurable):
    - Look up sensor metadata (category, product name)
    - Determine target topic based on category
    - For each data point in sensor.data array:
-     - Extract timestamp and other metadata
+     - Check timestamp cache for duplicates
+     - Extract metadata and create headers
      - Publish message to topic with headers
 
 ### Metadata Updates
@@ -182,20 +175,24 @@ Daily at midnight:
 
 This ensures metadata topics only contain meaningful change events, not duplicate data.
 
+### Deduplication
+
+**Timestamp-based cache**:
+- In-memory cache: `map[LSID]map[data_structure_type]timestamp`
+- Rehydrated from PostgreSQL on startup (last 24 hours)
+- Prevents duplicate messages from API
+
 ## Message Format
 
 ### Weather Data Message
 
-**Headers:**
+**Headers** (optimized January 2026):
 ```
+schema_version: 1
 lsid: 918290
 timestamp: 1769295600
-station_id: 228773
-station_id_uuid: a7a3248e-d78f-4ab4-9785-a96abd084493
 sensor_type: 43
 data_structure_type: 23
-category: ISS
-product_name: Vantage Pro2, Wireless
 ```
 
 **Body (JSON):**
@@ -231,42 +228,13 @@ product_name: Vantage Pro2, Wireless
 }
 ```
 
-## API Reference
-
-The WeatherLink v2 API Postman collection is included in the `api/postman/` directory:
-
-- **Collection**: `api/postman/WeatherLink v2 API.postman_collection.json`
-- **Environment**: `api/postman/WeatherLink v2 API.postman_environment_sample.json` (copy and rename to remove `_sample` suffix, then add your credentials)
-
-Import these into Postman to explore available endpoints.
-
-Sample API response snapshots are available in `api/snapshots/api.weatherlink.com/` for reference when developing or debugging.
-
-### Key Endpoints Used
-
-1. **Current Conditions**
-   - `GET /v2/current/{station-id}`
-   - Returns latest sensor readings
-
-2. **Sensor Metadata**
-   - `GET /v2/sensors`
-   - Returns all sensors for your account
-
-3. **Sensor Catalog**
-   - `GET /v2/sensor-catalog`
-   - Returns data structure definitions
-
-4. **Station Info**
-   - `GET /v2/stations/{station-id}`
-   - Returns station details
-
 ## Troubleshooting
 
 ### Service Won't Start
 
 ```bash
 # Check logs
-docker compose logs weather-publish
+docker compose logs weatherlink-ingest
 
 # Common issues:
 # 1. Missing API credentials
@@ -279,7 +247,7 @@ docker compose logs weather-publish
 1. Verify API credentials are correct
 2. Check station ID matches your WeatherLink account
 3. Ensure Kafka is reachable at configured broker address
-4. Look for errors in logs: `docker compose logs -f weather-publish`
+4. Look for errors in logs: `docker compose logs -f weatherlink-ingest`
 
 ### API Errors
 
@@ -291,7 +259,10 @@ docker compose logs weather-publish
 
 ```bash
 # Test Kafka connection
-docker compose exec weather-publish nc -zv kafka 29092
+docker compose exec weatherlink-ingest nc -zv kafka 29092
+
+# Test PostgreSQL connection
+docker compose exec weatherlink-ingest nc -zv postgres 5432
 
 # Test WeatherLink API
 curl "https://api.weatherlink.com/v2/version?api-key=YOUR_KEY"
@@ -303,13 +274,13 @@ curl "https://api.weatherlink.com/v2/version?api-key=YOUR_KEY"
 
 ```bash
 # View logs in real-time
-docker compose logs -f weather-publish
+docker compose logs -f weatherlink-ingest
 
 # Check if service is running
-docker compose ps weather-publish
+docker compose ps weatherlink-ingest
 
 # Restart service
-docker compose restart weather-publish
+docker compose restart weatherlink-ingest
 ```
 
 ### Verify Data Flow
@@ -327,21 +298,22 @@ Configuration loaded:
   - Station ID: 228773
   - Kafka Broker: kafka:29092
   - Fetch Interval: 5m
+Rehydrating cache from PostgreSQL...
 Fetching sensor metadata...
 Published metadata for 4 sensors
 Fetching sensor catalog...
-Published sensor catalog
+Published sensor catalog (filtered by active sensor types)
 Fetching station info...
 Published station info
 Fetching current conditions...
-Published 4 sensor readings
+Published 4 sensor readings, skipped 0 duplicates
 ```
 
 ## Extending
 
 ### Adding New Topics
 
-Modify `getTopicForCategory()` in `main.go`:
+Modify `getTopicForCategory()` in `service/service.go`:
 
 ```go
 func (s *Service) getTopicForCategory(category string) string {
@@ -365,29 +337,13 @@ Set `FETCH_INTERVAL` environment variable:
 
 WeatherLink API rate limits: ~300 requests per hour per station.
 
-### Adding Data Transformation
-
-Modify message before publishing in `fetchCurrentConditions()`:
-
-```go
-// Parse data point
-var dataMap map[string]interface{}
-json.Unmarshal(dataPoint, &dataMap)
-
-// Transform
-dataMap["temp_f"] = dataMap["temp"]  // Add Fahrenheit
-dataMap["custom_field"] = "value"    // Add custom data
-
-// Re-marshal
-modifiedData, _ := json.Marshal(dataMap)
-```
-
 ## Performance
 
 - **CPU**: Minimal (~1-2% average)
 - **Memory**: ~20-50 MB
 - **Network**: ~50-100 KB per fetch (varies by station)
 - **Kafka Messages**: 4-10 messages per fetch (depends on sensor count)
+- **Storage**: ~110 MB/year with LZ4 compression
 
 ## Security
 
@@ -396,14 +352,11 @@ modifiedData, _ := json.Marshal(dataMap)
 - Kafka communication over Docker network (plaintext internally)
 - External Kafka access via SSL/TLS
 
-## Future Enhancements
+## Related Services
 
-- [ ] Historic data backfill
-- [ ] Data validation and quality checks
-- [ ] Alert generation for extreme values
-- [ ] Aggregated statistics (daily/weekly summaries)
-- [ ] Multiple station support
-- [ ] Prometheus metrics export
+- **weatherlink-materializer**: Real-time Kafka→PostgreSQL materialization
+- **weatherlink-api-backfill**: Historical API→Kafka backfill
+- **weatherlink-kafka-backfill**: Kafka→PostgreSQL backfill
 
 ## References
 

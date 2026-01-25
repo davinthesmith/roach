@@ -37,13 +37,13 @@ docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -
 ./scripts/restart.sh
 
 # Restart specific service
-./scripts/restart.sh weather-publish
-./scripts/restart.sh weather-sql
+./scripts/restart.sh weatherlink-ingest
+./scripts/restart.sh weatherlink-materializer
 ./scripts/restart.sh postgres
 
 # Rebuild specific service after code changes
-docker compose build weather-publish
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weather-publish
+docker compose build weatherlink-ingest
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weatherlink-ingest
 ```
 
 ## Monitoring
@@ -71,13 +71,13 @@ docker stats roach-kafka
 ./scripts/logs.sh
 
 # Specific service
-./scripts/logs.sh weather-publish
-./scripts/logs.sh weather-sql
+./scripts/logs.sh weatherlink-ingest
+./scripts/logs.sh weatherlink-materializer
 ./scripts/logs.sh kafka
 ./scripts/logs.sh postgres
 
 # Follow logs
-docker logs -f roach-weather-publish
+docker logs -f roach-weatherlink-ingest
 
 # Last N lines
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --tail=100
@@ -257,7 +257,7 @@ docker exec roach-kafka kafka-consumer-groups \
 # Describe consumer group
 docker exec roach-kafka kafka-consumer-groups \
   --describe \
-  --group weather-sql-data-iss \
+  --group weatherlink-materializer-data-iss \
   --bootstrap-server localhost:29092
 ```
 
@@ -296,11 +296,11 @@ df -h
 ./scripts/start-all.sh build
 
 # Method 2: Rebuild specific service
-cd services/weather-publish
+cd services/weatherlink-ingest
 # ... make changes ...
-docker compose build weather-publish
-docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up -d weather-publish
-./scripts/logs.sh weather-publish  # Check logs
+docker compose build weatherlink-ingest
+docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up -d weatherlink-ingest
+./scripts/logs.sh weatherlink-ingest  # Check logs
 ```
 
 ### Credential Rotation
@@ -311,7 +311,7 @@ docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compos
 nano .env
 
 # 2. Restart affected service
-./scripts/restart.sh weather-publish
+./scripts/restart.sh weatherlink-ingest
 ```
 
 **Update PostgreSQL password**:
@@ -333,7 +333,7 @@ nano .env
 ./scripts/start-infra.sh
 
 # 2. Develop service locally (outside Docker)
-cd services/weather-publish
+cd services/weatherlink-ingest
 export KAFKA_BROKER=localhost:9092
 export POSTGRES_DSN="host=localhost port=5432 user=roach password=yourpass dbname=roach sslmode=disable"
 export WEATHERLINK_API_KEY=your_key
@@ -342,25 +342,25 @@ export WEATHERLINK_STATION_ID=your_station
 go run main.go
 
 # 3. Or test in Docker
-docker compose build weather-publish
-docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up weather-publish
+docker compose build weatherlink-ingest
+docker compose -f ../../docker-compose.infrastructure.yml -f ../../docker-compose.yml up weatherlink-ingest
 ```
 
 ### Debugging Containers
 
 ```bash
 # Enter running container
-docker exec -it roach-weather-publish sh
+docker exec -it roach-weatherlink-ingest sh
 
 # Check environment variables
-docker exec roach-weather-publish env
+docker exec roach-weatherlink-ingest env
 
 # View files
-docker exec roach-weather-publish ls -la
+docker exec roach-weatherlink-ingest ls -la
 
 # Check connectivity
-docker exec roach-weather-publish nc -zv kafka 29092
-docker exec roach-weather-publish nc -zv postgres 5432
+docker exec roach-weatherlink-ingest nc -zv kafka 29092
+docker exec roach-weatherlink-ingest nc -zv postgres 5432
 ```
 
 ## Performance Monitoring
@@ -375,7 +375,7 @@ docker stats
 docker stats roach-kafka
 
 # Log sizes
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --no-log-prefix weather-publish | wc -l
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs --no-log-prefix weatherlink-ingest | wc -l
 ```
 
 ### Performance Tuning
@@ -384,7 +384,7 @@ docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml logs -
 ```yaml
 # docker-compose.yml
 services:
-  weather-publish:
+  weatherlink-ingest:
     environment:
       - FETCH_INTERVAL=10m  # Increase from 5m
 ```
@@ -392,7 +392,7 @@ services:
 **Increase logging verbosity for debugging**:
 ```yaml
 services:
-  weather-publish:
+  weatherlink-ingest:
     environment:
       - LOG_LEVEL=debug
 ```
@@ -400,7 +400,7 @@ services:
 **Decrease logging for production**:
 ```yaml
 services:
-  weather-publish:
+  weatherlink-ingest:
     environment:
       - LOG_LEVEL=warn
 ```
@@ -488,8 +488,8 @@ docker exec roach-postgres pg_isready -U roach
 docker exec -it roach-postgres psql -U roach -d roach
 
 # Test from services
-docker exec roach-weather-publish nc -zv kafka 29092
-docker exec roach-weather-sql nc -zv postgres 5432
+docker exec roach-weatherlink-ingest nc -zv kafka 29092
+docker exec roach-weatherlink-materializer nc -zv postgres 5432
 ```
 
 ### Service Health Verification
@@ -499,8 +499,8 @@ docker exec roach-weather-sql nc -zv postgres 5432
 docker ps
 
 # Verify services processing data
-./scripts/logs.sh weather-publish | tail -20
-./scripts/logs.sh weather-sql | tail -20
+./scripts/logs.sh weatherlink-ingest | tail -20
+./scripts/logs.sh weatherlink-materializer | tail -20
 
 # Check Kafka topics have messages
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092

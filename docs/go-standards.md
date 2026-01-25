@@ -429,11 +429,11 @@ Use simple module names for internal services:
 
 ```go
 // go.mod - Good ✓
-module weather-sql
+module weatherlink-materializer
 go 1.21
 
 // go.mod - Bad ✗ (for internal services)
-module github.com/company/roach/services/weather-sql
+module github.com/company/roach/services/weatherlink-materializer
 go 1.21
 ```
 
@@ -443,9 +443,9 @@ Within the service, use the module name:
 
 ```go
 import (
-    "weather-sql/config"
-    "weather-sql/models"
-    "weather-sql/service"
+    "weatherlink-materializer/config"
+    "weatherlink-materializer/models"
+    "weatherlink-materializer/service"
 )
 ```
 
@@ -499,10 +499,10 @@ kafka → none (generic)
 
 ## Real-World Examples
 
-### weather-publish (Publisher Pattern)
+### weatherlink-ingest (Publisher Pattern)
 
 ```
-weather-publish/
+weatherlink-ingest/
 ├── main.go              # Wires API client, Kafka producer, service
 ├── config/              # Loads WeatherLink credentials, intervals
 ├── models/              # API response structures
@@ -520,10 +520,10 @@ weather-publish/
     └── hash.go          # SHA-256 utility
 ```
 
-### weather-sql (Consumer Pattern)
+### weatherlink-materializer (Consumer Pattern)
 
 ```
-weather-sql/
+weatherlink-materializer/
 ├── main.go              # Wires DB, Kafka readers, service
 ├── config/              # Loads DB connection, Kafka broker
 ├── models/              # DB entities (Device, Tag, FieldMetadata)

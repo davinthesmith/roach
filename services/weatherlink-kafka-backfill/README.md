@@ -447,7 +447,7 @@ UPDATE orphaned_messages SET reprocessed = true WHERE id = <id>;
 
 If backfill interferes with real-time materializer:
 - Backfill uses separate consumer group: `weatherlink-kafka-backfill`
-- Materializer uses: `weather-sql-materializer`
+- Materializer uses: `weatherlink-materializer`
 - No conflicts should occur
 
 To reset backfill consumer group:
@@ -462,7 +462,7 @@ docker exec roach-kafka kafka-consumer-groups --bootstrap-server localhost:29092
 |---------|-------------------------|---------------------------|
 | **Mode** | Continuous daemon | One-shot execution |
 | **Start Offset** | LastOffset (new messages only) | Configurable (earliest/latest/specific) |
-| **Consumer Group** | weather-sql-materializer | weatherlink-kafka-backfill |
+| **Consumer Group** | weatherlink-materializer | weatherlink-kafka-backfill |
 | **Worker Pool Size** | 4 (default) | 8 (default) |
 | **Batch Size** | 100 (default) | 500 (default) |
 | **Flush Interval** | 500ms | 1000ms |

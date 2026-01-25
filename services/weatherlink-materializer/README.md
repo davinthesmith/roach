@@ -1,6 +1,10 @@
-# Weather SQL Materializer
+# WeatherLink Materializer
 
-Go-based service that consumes weather data from Kafka topics and materializes it to PostgreSQL using a Device/Tag/Record hierarchy with high-throughput batching and concurrent processing.
+Real-time materialization service that consumes weather data from Kafka topics and materializes to PostgreSQL using a Device/Tag/Record hierarchy with high-throughput batching and concurrent processing.
+
+**Service Name**: `weatherlink-materializer` (Docker service)  
+**Binary Name**: `weather-sql` (internal Go module and executable)  
+**Container Name**: `roach-weatherlink-materializer`
 
 ## Overview
 
@@ -73,13 +77,13 @@ DB_POOL_MAX_CONNS=10                        # Maximum database connections
 
 ```bash
 # From project root
-docker compose up weather-sql
+docker compose up weatherlink-materializer
 ```
 
 ### Standalone with Go
 
 ```bash
-cd services/weather-sql
+cd services/weatherlink-materializer
 
 # Install dependencies
 go mod download
@@ -195,13 +199,13 @@ DB Pool: acquired=4, idle=6, max=10
 
 ```bash
 # View logs
-docker compose logs -f weather-sql
+docker compose logs -f weatherlink-materializer
 
 # Check if running
-docker compose ps weather-sql
+docker compose ps weatherlink-materializer
 
 # Restart service
-docker compose restart weather-sql
+docker compose restart weatherlink-materializer
 ```
 
 ### Database Queries
@@ -276,7 +280,7 @@ LIMIT 100;
 
 ```bash
 # Check logs
-docker compose logs weather-sql
+docker compose logs weatherlink-materializer
 
 # Common issues:
 # 1. PostgreSQL not ready (wait for health check)
@@ -299,7 +303,7 @@ SELECT reason, COUNT(*) FROM orphaned_messages GROUP BY reason;
 ```
 
 If "missing_device":
-- Ensure weather-publish service is running
+- Ensure weatherlink-ingest service is running
 - Verify metadata is being published
 
 ## Dependencies

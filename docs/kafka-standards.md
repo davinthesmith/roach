@@ -11,7 +11,7 @@ This document defines Kafka implementation standards for ROACH services, based o
 
 Following these standards reduces storage requirements by **70-80%** while improving reliability and scalability.
 
-### Implemented Optimizations (weather-publish)
+### Implemented Optimizations (weatherlink-ingest)
 
 | Optimization | Storage Savings | Status |
 |-------------|-----------------|--------|
@@ -96,7 +96,7 @@ BatchTimeout: 50 * time.Millisecond,     // Max delay
 
 **Current Implementation**: Uses `confluent-kafka-go/v2` with true idempotency
 
-**Configuration**: Automatically enabled in weather-publish producer
+**Configuration**: Automatically enabled in weatherlink-ingest producer
 
 **How It Works**:
 
@@ -111,7 +111,7 @@ BatchTimeout: 50 * time.Millisecond,     // Max delay
 - Producer retries → Broker detects duplicate via sequence number and drops it
 - No duplicate in topic ✅
 
-**Configuration** (automatically applied in weather-publish):
+**Configuration** (automatically applied in weatherlink-ingest):
 ```go
 config := &kafka.ConfigMap{
     "enable.idempotence": true,
@@ -126,7 +126,7 @@ config := &kafka.ConfigMap{
 - librdkafka installed
 - Go 1.22+ recommended
 
-**Status**: ✅ Implemented in weather-publish service (January 2026)
+**Status**: ✅ Implemented in weatherlink-ingest service (January 2026)
 
 ---
 
@@ -302,7 +302,7 @@ Move constants to metadata topic, accessed via lookup.
 reader := kafka.NewReader(kafka.ReaderConfig{
     Brokers: []string{"kafka:29092"},
     Topic:   "weather.iss",
-    GroupID: "weather-sql-data-iss",  // Descriptive, includes purpose
+    GroupID: "weatherlink-materializer-data-iss",  // Descriptive, includes purpose
 })
 ```
 
@@ -378,7 +378,7 @@ log.Printf("Published %d sensor readings, skipped %d duplicates",
 
 ## 7. Storage Impact Analysis
 
-### 7.1 Current Implementation (weather-publish)
+### 7.1 Current Implementation (weatherlink-ingest)
 
 **Before Optimization**:
 - Daily: 1.1 MB
@@ -588,7 +588,7 @@ HAVING COUNT(*) > 1;
 
 ## 12. Compliance Matrix
 
-### 12.1 weather-publish Service
+### 12.1 weatherlink-ingest Service
 
 | Standard | Status | Notes |
 |----------|--------|-------|
@@ -704,7 +704,7 @@ func (p *Producer) Publish(ctx context.Context, topic, key string,
 reader := kafka.NewReader(kafka.ReaderConfig{
     Brokers:        []string{"kafka:29092"},
     Topic:          "weather.iss",
-    GroupID:        "weather-sql-data-iss",
+    GroupID:        "weatherlink-materializer-data-iss",
     MinBytes:       1024,        // 1KB minimum
     MaxBytes:       10485760,    // 10MB maximum
     CommitInterval: time.Second, // Auto-commit frequency
@@ -758,7 +758,7 @@ def calculate_storage(sensors, messages_per_day, avg_message_size_bytes,
         'total_gb': total_gb
     }
 
-# Example: weather-publish
+# Example: weatherlink-ingest
 result = calculate_storage(
     sensors=4,
     messages_per_day=288,  # Every 5 minutes

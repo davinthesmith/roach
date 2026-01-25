@@ -32,7 +32,7 @@ vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION
 
 # Monitor
 ./scripts/status.sh             # Check health
-./scripts/logs.sh weather-publish  # View service logs
+./scripts/logs.sh weatherlink-ingest  # View service logs
 docker ps                       # Check containers
 
 # Stop
@@ -289,13 +289,13 @@ weatherlink-ingest/
 
 **Dependencies**: `github.com/segmentio/kafka-go`, `github.com/lib/pq`
 
-### weather-sql Service
+### weatherlink-materializer Service
 
 **Purpose**: Materialize Kafka messages to PostgreSQL with automatic tag creation
 
 **Package Structure**:
 ```
-weather-sql/
+weatherlink-materializer/
 ├── main.go              # Entry point (~75 lines)
 ├── config/              # Configuration
 │   └── config.go
@@ -450,7 +450,7 @@ sensor_catalog → enriches → tags (unit, description)
 
 # Restart
 ./scripts/restart.sh                # Restart all
-./scripts/restart.sh weather-publish  # Restart specific service
+./scripts/restart.sh weatherlink-ingest  # Restart specific service
 
 # Status
 ./scripts/status.sh             # System status
@@ -463,7 +463,7 @@ docker stats                    # Resource usage
 ```bash
 # View logs
 ./scripts/logs.sh                    # All services
-./scripts/logs.sh weather-publish    # Specific service
+./scripts/logs.sh weatherlink-ingest    # Specific service
 docker logs -f roach-kafka           # Follow logs
 
 # Kafka UI
@@ -519,8 +519,8 @@ docker exec roach-kafka kafka-console-consumer \
 ./scripts/start-all.sh build         # Rebuild all
 
 # Or rebuild specific service
-docker compose build weather-publish
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weather-publish
+docker compose build weatherlink-ingest
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weatherlink-ingest
 ```
 
 ## Quick Troubleshooting
@@ -539,14 +539,14 @@ lsof -i :8080  # Kafka UI
 **Fix**: Wait for health check
 ```bash
 docker ps  # Look for "(healthy)" status
-./scripts/restart.sh weather-publish
+./scripts/restart.sh weatherlink-ingest
 ```
 
 ### No Data Publishing
 **Check**: API credentials, service logs
 ```bash
-docker exec roach-weather-publish env | grep WEATHERLINK
-./scripts/logs.sh weather-publish
+docker exec roach-weatherlink-ingest env | grep WEATHERLINK
+./scripts/logs.sh weatherlink-ingest
 ```
 
 ### Kafka UI Not Loading
