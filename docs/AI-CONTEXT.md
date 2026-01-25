@@ -29,19 +29,24 @@ vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION
 # Start system
 ./scripts/start-all.sh          # Normal start
 ./scripts/start-all.sh build    # With rebuild (after code changes)
+./scripts/start-all.sh clean    # Clean slate (removes all data)
 
 # Monitor
 ./scripts/status.sh             # Check health
-./scripts/logs.sh weatherlink-kafka-to-kafka  # View service logs
+./scripts/logs.sh weatherlink-kafka  # View service logs
+./scripts/db/query.sh stats     # Database statistics
 docker ps                       # Check containers
 
 # Stop
-./scripts/stop-all.sh
+./scripts/stop-all.sh           # Keep data
+./scripts/stop-all.sh clean     # Remove all data
 
 # Access
 # Kafka UI: http://localhost:8080
 # PostgreSQL: localhost:5432 (user: roach, db: roach)
 ```
+
+**For complete script documentation:** See [scripts/README.md](../scripts/README.md)
 
 **Network Endpoints**:
 - Kafka (internal): `kafka:29092`
@@ -77,7 +82,7 @@ docker ps                       # Check containers
 
 ### Application Layer
 
-**weatherlink-kafka-to-kafka** (`roach-weatherlink-kafka-to-kafka`)
+**weatherlink-kafka** (`roach-weatherlink-kafka`)
 - Language: Go
 - Purpose: Real-time data ingestion (API → Kafka)
 - Interval: 5 minutes (configurable via `FETCH_INTERVAL`)
@@ -111,7 +116,7 @@ docker ps                       # Check containers
 ```
 WeatherLink API (HTTPS)
     ↓ Every 5 minutes
-weatherlink-kafka-to-kafka (Go) - Deduplication
+weatherlink-kafka (Go) - Deduplication
     ↓ Publish JSON messages
 Kafka Broker (Infinite retention)
     ↓ Stream to consumers
@@ -147,7 +152,7 @@ roach-network (Docker bridge)
 │   ├── postgres:5432 (internal), localhost:5432 (external)
 │   └── kafka-ui:8080
 └── Applications
-    ├── weatherlink-kafka-to-kafka (connects to kafka:29092, postgres:5432)
+    ├── weatherlink-kafka (connects to kafka:29092, postgres:5432)
     ├── weatherlink-sql (connects to kafka:29092, postgres:5432)
     ├── weatherlink-kafka-backfill (connects to kafka:29092) [manual]
     └── weatherlink-sql-backfill (connects to kafka:29092, postgres:5432) [manual]
@@ -241,13 +246,14 @@ kafka:
 
 ### Service Naming Convention
 
-**Source-Based Pattern**: `weatherlink-{source}-{action}`
-- Source indicates where data comes from
-- Action indicates the operation (ingest, backfill, materializer)
+**Source-Based Pattern**: `weatherlink-{destination}`
+- Services named by their destination (kafka or sql)
+- Real-time services run as daemons
+- Backfill services are one-shot executables
 
 **Services**:
-- **weatherlink-kafka**: Real-time API → Kafka (streaming)
-- **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming)
+- **weatherlink-kafka**: Real-time API → Kafka (streaming daemon)
+- **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming daemon)
 - **weatherlink-kafka-backfill**: Historical API → Kafka (one-shot)
 - **weatherlink-sql-backfill**: Historical Kafka → PostgreSQL (one-shot)
 
@@ -498,30 +504,44 @@ docker logs -f roach-kafka           # Follow logs
 # List topics
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
 
-# View messages
+# View messages (last 10)
 docker exec roach-kafka kafka-console-consumer \
   --bootstrap-server localhost:29092 \
   --topic weather.iss \
   --from-beginning \
   --max-messages 10
 
-# With headers
+# With headers and timestamps
 docker exec roach-kafka kafka-console-consumer \
   --bootstrap-server localhost:29092 \
   --topic weather.iss \
   --property print.headers=true \
+  --property print.timestamp=true \
   --from-beginning
+
+# Consumer groups
+docker exec roach-kafka kafka-consumer-groups \
+  --list \
+  --bootstrap-server localhost:29092
+
+docker exec roach-kafka kafka-consumer-groups \
+  --describe \
+  --group weatherlink-sql-data-iss \
+  --bootstrap-server localhost:29092
 ```
 
 ### Service Updates
 
 ```bash
 # After code changes
-./scripts/start-all.sh build         # Rebuild all
+./scripts/start-all.sh build         # Rebuild all services
 
 # Or rebuild specific service
 docker compose build weatherlink-kafka
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weatherlink-kafka
+./scripts/restart-all.sh weatherlink-kafka
+
+# View logs after update
+./scripts/logs.sh weatherlink-kafka
 ```
 
 ## Quick Troubleshooting
@@ -536,10 +556,13 @@ lsof -i :8080  # Kafka UI
 ```
 
 ### Connection Refused
-**Cause**: Kafka not ready (takes 30-60s)
-**Fix**: Wait for health check
+
+**Cause**: Kafka not ready (takes 20-60s for health check)
+
+**Fix**: Wait for health check or restart
 ```bash
-docker ps  # Look for "(healthy)" status
+./scripts/status.sh  # Check health status
+docker ps            # Look for "(healthy)" status
 ./scripts/restart-all.sh weatherlink-kafka
 ```
 
@@ -567,9 +590,17 @@ SELECT COUNT(*) FROM sensor_catalog;
 ```
 
 ### Clean Restart
+
 **When**: System in bad state, need fresh start
+
 ```bash
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -v
+./scripts/stop-all.sh clean
+./scripts/start-all.sh
+```
+
+**Complete reset (WARNING: deletes ALL data):**
+```bash
+./scripts/stop-all.sh clean
 rm -rf data/
 ./scripts/start-all.sh
 ```

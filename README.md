@@ -121,15 +121,12 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/db/migrate.sh down    # Rollback last migration
 
 # Historical data backfill (API → Kafka)
-./scripts/weatherlink-kafka-backfill.sh --start $(date -v-24H +%s)
-./scripts/weatherlink-kafka-backfill.sh --start 1768780863 --end 1768865863
+./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s)
+./scripts/weatherlink/kafka-backfill.sh --start 1768780863 --end 1768865863
 
 # Database backfill (Kafka → PostgreSQL)
-./scripts/weatherlink-sql-backfill.sh
-./scripts/weatherlink-sql-backfill.sh --topics weather.iss --workers 16
-
-# Test API backfill with small window
-./scripts/test-backfill.sh
+./scripts/weatherlink/sql-backfill.sh
+./scripts/weatherlink/sql-backfill.sh --topics weather.iss --workers 16
 
 # Restart service
 ./scripts/restart-all.sh weather

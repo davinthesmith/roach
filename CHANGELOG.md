@@ -2,6 +2,31 @@
 
 ## 2026-01-25
 
+### Script Reorganization - WeatherLink Scripts
+
+#### Changed
+- **Script organization**: Reorganized weatherlink-prefixed scripts into a dedicated directory
+  - Created `scripts/weatherlink/` directory for weatherlink-related scripts
+  - Moved and renamed scripts:
+    - `scripts/weatherlink-kafka-backfill.sh` → `scripts/weatherlink/kafka-backfill.sh`
+    - `scripts/weatherlink-sql-backfill.sh` → `scripts/weatherlink/sql-backfill.sh`
+  - Updated all documentation references to use new paths
+  - Files updated: README.md, service READMEs (weatherlink-kafka-backfill, weatherlink-sql-backfill)
+  - Removed reference to non-existent `test-backfill.sh` from README.md
+
+#### Benefits
+- Cleaner scripts directory structure with related scripts grouped together
+- Shorter script names (removed redundant "weatherlink-" prefix)
+- Better organization for future weatherlink-related scripts
+- Maintains backward compatibility (scripts still work the same way, just in new location)
+
+#### Migration
+If you have any custom scripts or documentation referencing the old paths:
+- Old: `./scripts/weatherlink-kafka-backfill.sh`
+- New: `./scripts/weatherlink/kafka-backfill.sh`
+- Old: `./scripts/weatherlink-sql-backfill.sh`
+- New: `./scripts/weatherlink/sql-backfill.sh`
+
 ### Kafka Backfill Service - Station Metadata Processing Fix
 
 #### Fixed

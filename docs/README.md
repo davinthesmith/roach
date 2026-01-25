@@ -25,9 +25,14 @@ When working with this project:
 - **[kafka-topics.md](kafka-topics.md)** - Full topic schemas, all fields, message formats
 - **[migrations.md](migrations.md)** - Database migration framework details
 
+### Scripts Documentation
+- **[scripts/README.md](../scripts/README.md)** - **Complete script documentation** - All operational scripts with every option, examples, and workflows
+
 ## Usage Guide
 
 **For general tasks**: Read [AI-CONTEXT.md](AI-CONTEXT.md) (1 file, covers 80% of needs)
+
+**For script usage**: See [scripts/README.md](../scripts/README.md) (complete reference for all operational scripts)
 
 **For specific deep dives**:
 - System design questions → [architecture.md](architecture.md)

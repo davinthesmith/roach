@@ -30,10 +30,42 @@ Use this service when:
 
 ## Usage
 
-### Command Line
+This service is designed to run via Docker Compose. For standalone binary usage, see the "Standalone Binary" section below.
+
+### Docker
 
 ```bash
-# Backfill all topics from earliest to latest
+# Using helper script (recommended)
+./scripts/weatherlink/sql-backfill.sh
+
+# With custom arguments
+./scripts/weatherlink/sql-backfill.sh --topics weather.iss --workers 16
+
+# Full docker compose command
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-sql-backfill --topics weather.iss
+
+# Override environment variables
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm \
+  -e WORKER_POOL_SIZE=16 \
+  -e BATCH_SIZE=1000 \
+  weatherlink-sql-backfill
+```
+
+### Standalone Binary (Advanced)
+
+If you want to run the service as a standalone binary (without Docker):
+
+```bash
+cd services/weatherlink-sql-backfill
+
+# Build the binary
+go build -o weatherlink-sql-backfill
+
+# Set environment variables
+export KAFKA_BROKER=localhost:9092
+export POSTGRES_DSN="host=localhost port=5432 user=roach password=roach dbname=roach sslmode=disable"
+
+# Run backfill
 ./weatherlink-sql-backfill
 
 # Backfill specific topics
@@ -49,25 +81,6 @@ Use this service when:
 ./weatherlink-sql-backfill --start-offset -1
 ```
 
-### Docker
-
-```bash
-# Using helper script (recommended)
-./scripts/weatherlink-sql-backfill.sh
-
-# With custom arguments
-./scripts/weatherlink-sql-backfill.sh --topics weather.iss --workers 16
-
-# Full docker compose command
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-sql-backfill --topics weather.iss
-
-# Override environment variables
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm \
-  -e WORKER_POOL_SIZE=16 \
-  -e BATCH_SIZE=1000 \
-  weatherlink-sql-backfill
-```
-
 ### Metadata Backfill
 
 The `--metadata` flag enables backfilling of metadata topics (devices, catalog, station) in addition to data topics.
@@ -76,10 +89,10 @@ The `--metadata` flag enables backfilling of metadata topics (devices, catalog, 
 
 ```bash
 # Backfill metadata topics only
-./scripts/weatherlink-sql-backfill.sh --metadata --topics ""
+./scripts/weatherlink/sql-backfill.sh --metadata --topics ""
 
 # Backfill metadata AND data topics (recommended for fresh database)
-./scripts/weatherlink-sql-backfill.sh --metadata
+./scripts/weatherlink/sql-backfill.sh --metadata
 
 # Docker command
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm \
@@ -311,7 +324,7 @@ docker compose stop weatherlink-sql
 psql -c "TRUNCATE devices, tags, sensor_catalog, records_numeric, records_text, records_null CASCADE;"
 
 # 3. Run backfill with metadata first
-./scripts/weatherlink-sql-backfill.sh --metadata
+./scripts/weatherlink/sql-backfill.sh --metadata
 
 # 4. Restart materializer
 docker compose start weatherlink-sql
@@ -323,10 +336,10 @@ docker compose start weatherlink-sql
 
 ```bash
 # Only backfill ISS sensor data
-./scripts/weatherlink-sql-backfill.sh --topics weather.iss
+./scripts/weatherlink/sql-backfill.sh --topics weather.iss
 
 # Backfill indoor and barometer data
-./scripts/weatherlink-sql-backfill.sh --topics weather.indoor,weather.barometer
+./scripts/weatherlink/sql-backfill.sh --topics weather.indoor,weather.barometer
 ```
 
 ### Backfill Recent Data Only
@@ -337,14 +350,14 @@ docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
   --broker-list localhost:29092 --topic weather.iss --time -1
 
 # Backfill from offset 10000 to latest
-./scripts/weatherlink-sql-backfill.sh --topics weather.iss --start-offset 10000
+./scripts/weatherlink/sql-backfill.sh --topics weather.iss --start-offset 10000
 ```
 
 ### High-Performance Backfill
 
 ```bash
 # Maximum parallelism for large backfills
-./scripts/weatherlink-sql-backfill.sh --workers 16 --batch-size 1000
+./scripts/weatherlink/sql-backfill.sh --workers 16 --batch-size 1000
 ```
 
 ## Troubleshooting
@@ -370,7 +383,7 @@ docker compose logs weatherlink-sql-backfill
    
    If 0, you need to backfill metadata first:
    ```bash
-   ./scripts/weatherlink-sql-backfill.sh --metadata
+   ./scripts/weatherlink/sql-backfill.sh --metadata
    ```
 
 2. Verify Kafka topics exist and have data:
@@ -406,7 +419,7 @@ SELECT reason, COUNT(*) FROM orphaned_messages WHERE NOT reprocessed GROUP BY re
 1. **`missing_device`**: Device (LSID) not found in database
    - **Solution**: Run backfill with `--metadata` flag to populate devices from Kafka:
      ```bash
-     ./scripts/weatherlink-sql-backfill.sh --metadata
+     ./scripts/weatherlink/sql-backfill.sh --metadata
      ```
    - Verify `weather.metadata.sensors` topic has data:
      ```bash

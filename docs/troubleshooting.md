@@ -1,6 +1,29 @@
 # Troubleshooting
 
-> **For common issues, see [AI-CONTEXT.md](AI-CONTEXT.md)**. This document covers comprehensive problem solving.
+> **For common issues, see [AI-CONTEXT.md](AI-CONTEXT.md)**. For operations, see [operations.md](operations.md). For complete script documentation, see [scripts/README.md](../scripts/README.md).
+>
+> This document covers comprehensive problem-solving for all known issues and edge cases.
+
+## Quick Diagnostics
+
+**First steps for any problem:**
+```bash
+# Check overall system health
+./scripts/status.sh
+
+# Check service logs for errors
+./scripts/logs.sh
+
+# Check specific service
+./scripts/logs.sh weatherlink-kafka
+
+# Check Docker daemon
+docker info
+
+# Check disk space
+df -h
+du -sh data/*
+```
 
 ## System Issues
 
@@ -8,10 +31,11 @@
 
 **Symptom**: Services fail to start or exit immediately
 
-**Check**:
+**Check:**
 ```bash
-docker compose -f docker-compose.infrastructure.yml logs
-docker ps
+./scripts/status.sh
+./scripts/logs.sh
+docker ps -a
 ```
 
 **Common causes**:
@@ -38,23 +62,27 @@ cat .env | grep WEATHERLINK
 
 **Symptom**: Containers restart repeatedly or stay "unhealthy"
 
-**Check**:
+**Check:**
 ```bash
+./scripts/status.sh
 docker ps
 docker inspect roach-kafka | grep -A 10 Health
-docker logs roach-kafka
-docker logs roach-zookeeper
-docker logs roach-postgres
+./scripts/logs.sh kafka
+./scripts/logs.sh zookeeper
+./scripts/logs.sh postgres
 ```
 
-**Solutions**:
+**Solutions:**
 ```bash
-# Wait longer (Kafka takes 30-60s)
-sleep 60 && docker ps
-
-# Clean restart
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml down -v
+# Use script with automatic retry (handles ephemeral node issues)
 ./scripts/start-all.sh
+
+# Or clean restart for persistent issues
+./scripts/stop-all.sh clean
+./scripts/start-all.sh
+
+# Wait longer (Kafka takes 20-60s for health check)
+sleep 60 && ./scripts/status.sh
 ```
 
 ### Port Conflicts
@@ -95,18 +123,22 @@ docker ps  # Check for "(healthy)"
 
 **Symptom**: 401 Unauthorized, invalid credentials
 
-**Check**:
+**Check:**
 ```bash
 docker exec roach-weatherlink-kafka env | grep WEATHERLINK
+./scripts/logs.sh weatherlink-kafka | grep -i auth
 ```
 
-**Solutions**:
+**Solutions:**
 ```bash
-# Update .env file
-nano .env
+# Update .env file with correct credentials
+vi .env
 
-# Restart service
+# Restart service to pick up new credentials
 ./scripts/restart-all.sh weatherlink-kafka
+
+# Verify credentials loaded
+docker exec roach-weatherlink-kafka env | grep WEATHERLINK
 ```
 
 ### No Data Publishing
@@ -169,16 +201,22 @@ docker exec roach-weatherlink-kafka nc -zv postgres 5432
 
 **Symptom**: Kafka doesn't respond to requests
 
-**Check**:
+**Check:**
 ```bash
-docker logs roach-kafka
+./scripts/status.sh
+./scripts/logs.sh kafka
 docker exec roach-kafka kafka-broker-api-versions --bootstrap-server localhost:29092
 ```
 
-**Solutions**:
+**Solutions:**
 ```bash
 # Restart Kafka
-docker restart roach-kafka
+./scripts/restart-all.sh kafka
+
+# Or full clean restart
+./scripts/stop-all.sh clean
+./scripts/start-all.sh
+```
 
 # Clean restart
 docker compose -f docker-compose.infrastructure.yml down

@@ -19,23 +19,25 @@ This service fetches historical weather data from the WeatherLink API and publis
 
 ## Usage
 
-### Command Line
+This service is designed to run via Docker Compose. For standalone binary usage, see the "Standalone Binary" section below.
+
+### Docker
 
 ```bash
-# Backfill from start timestamp to end timestamp (Unix timestamps)
-./weatherlink-kafka-backfill --start 1768780863 --end 1768865863
+# Using helper script (recommended) - Unix timestamp
+./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s)
 
-# Backfill using datetime strings
-./weatherlink-kafka-backfill --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+# Using datetime strings
+./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
 
-# Backfill from start to now
-./weatherlink-kafka-backfill --start 1768780863
+# Or with full command
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-kafka-backfill --start $(date -v-24H +%s)
 
-# Backfill from datetime to now
-./weatherlink-kafka-backfill --start "2026-01-11 18:20:47"
+# With custom args
+./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s) --end $(date +%s) --requests-per-second 5 --workers 8
 
-# Custom rate limiting and parallelism
-./weatherlink-kafka-backfill --start 1768780863 --requests-per-second 5 --workers 8
+# Using datetime format with date command
+./scripts/weatherlink/kafka-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
 ```
 
 **Supported timestamp formats:**
@@ -45,23 +47,30 @@ This service fetches historical weather data from the WeatherLink API and publis
 - Date and time (no seconds): `2026-01-11 18:20`
 - Date only: `2026-01-11` (assumes 00:00:00)
 
-### Docker
+### Standalone Binary (Advanced)
+
+If you want to run the service as a standalone binary (without Docker):
 
 ```bash
-# Using helper script (recommended) - Unix timestamp
-./scripts/weatherlink-kafka-backfill.sh --start $(date -v-24H +%s)
+cd services/weatherlink-kafka-backfill
 
-# Using datetime strings
-./scripts/weatherlink-kafka-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+# Build the binary
+go build -o weatherlink-kafka-backfill
 
-# Or with full command
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-kafka-backfill --start $(date -v-24H +%s)
+# Set environment variables
+export WEATHERLINK_API_KEY=your_key
+export WEATHERLINK_API_SECRET=your_secret
+export WEATHERLINK_STATION_ID=your_station_id
+export KAFKA_BROKER=localhost:9092
 
-# With custom args
-./scripts/weatherlink-kafka-backfill.sh --start $(date -v-24H +%s) --end $(date +%s) --requests-per-second 5 --workers 8
+# Run backfill
+./weatherlink-kafka-backfill --start 1768780863 --end 1768865863
 
-# Using datetime format with date command
-./scripts/weatherlink-kafka-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
+# With datetime strings
+./weatherlink-kafka-backfill --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+
+# Custom rate limiting and parallelism
+./weatherlink-kafka-backfill --start 1768780863 --requests-per-second 5 --workers 8
 ```
 
 ## Configuration
@@ -114,33 +123,13 @@ This approach ensures:
 To verify that duplicates are prevented:
 
 ```bash
-# Automated test script
-./scripts/test-backfill.sh
-```
-
-This script:
-1. Counts messages in Kafka topic before backfill
-2. Runs backfill with fixed timestamps
-3. Counts messages after first run (should increase)
-4. Runs SAME backfill again with same timestamps
-5. Counts messages after second run (should NOT increase - duplicates skipped)
-6. Verifies the skip count from logs matches expected duplicates
-
-The service will log:
-```
-Published X new messages, skipped Y duplicates
-```
-
-**Manual testing**:
-
-```bash
 # Get topic message count BEFORE backfill
 BEFORE=$(docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
   --broker-list localhost:29092 --topic weather.iss --time -1 | \
   awk -F: '{sum += $3} END {print sum}')
 
 # Run backfill with specific timestamps
-./scripts/backfill.sh --start 1769359875 --end 1769363477
+./scripts/weatherlink/kafka-backfill.sh --start 1769359875 --end 1769363477
 
 # Get count AFTER first run
 AFTER1=$(docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
@@ -148,7 +137,7 @@ AFTER1=$(docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
   awk -F: '{sum += $3} END {print sum}')
 
 # Run SAME backfill again (same timestamps!)
-./scripts/backfill.sh --start 1769359875 --end 1769363477
+./scripts/weatherlink/kafka-backfill.sh --start 1769359875 --end 1769363477
 
 # Get count AFTER second run
 AFTER2=$(docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
@@ -158,6 +147,11 @@ AFTER2=$(docker exec roach-kafka kafka-run-class kafka.tools.GetOffsetShell \
 echo "Before: $BEFORE, After 1st: $AFTER1, After 2nd: $AFTER2"
 # AFTER1 should be > BEFORE (new messages added)
 # AFTER2 should equal AFTER1 (duplicates skipped by client)
+```
+
+The service will log:
+```
+Published X new messages, skipped Y duplicates
 ```
 
 ## Rate Limiting
@@ -173,28 +167,28 @@ Conservative rate limiting to stay well under API limits:
 
 ```bash
 # Backfill last 7 days (Unix timestamp)
-./scripts/weatherlink-kafka-backfill.sh --start $(date -v-7d +%s)
+./scripts/weatherlink/kafka-backfill.sh --start $(date -v-7d +%s)
 
 # Backfill last 24 hours (Unix timestamp)
-./scripts/weatherlink-kafka-backfill.sh --start $(date -v-24H +%s)
+./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s)
 
 # Backfill last 24 hours (datetime format)
-./scripts/weatherlink-kafka-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
+./scripts/weatherlink/kafka-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
 
 # Backfill specific date range (using Unix timestamps)
-./scripts/weatherlink-kafka-backfill.sh --start 1768780863 --end 1768865863
+./scripts/weatherlink/kafka-backfill.sh --start 1768780863 --end 1768865863
 
 # Backfill specific date range (using datetime strings)
-./scripts/weatherlink-kafka-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
 
 # Backfill with date only (assumes 00:00:00)
-./scripts/weatherlink-kafka-backfill.sh --start "2026-01-11" --end "2026-01-12"
+./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11" --end "2026-01-12"
 
 # Backfill with slower rate (if hitting limits)
-./scripts/weatherlink-kafka-backfill.sh --start "2026-01-11 18:20:47" --requests-per-second 5
+./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11 18:20:47" --requests-per-second 5
 
 # Backfill with more workers for faster processing
-./scripts/weatherlink-kafka-backfill.sh --start "2026-01-11" --workers 8
+./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11" --workers 8
 ```
 
 ## Monitoring
