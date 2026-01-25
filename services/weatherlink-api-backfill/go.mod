@@ -1,4 +1,4 @@
-module weatherlink-backfill
+module weatherlink-api-backfill
 
 go 1.22
 

@@ -54,7 +54,7 @@ func New(config models.Config, pool *pgxpool.Pool) (*Materializer, error) {
 	)
 
 	// Initialize processors
-	metadataProc := NewMetadataProcessor(deviceRepo, c)
+	metadataProc := NewMetadataProcessor(deviceRepo, orphanRepo, c)
 	catalogProc := NewCatalogProcessor(catalogRepo, c)
 	dataProc := NewDataProcessor(tagRepo, recordRepo, orphanRepo, c)
 	enricher := NewEnricher(tagRepo, c)

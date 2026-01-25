@@ -1,6 +1,12 @@
-# WeatherLink Backfill Service
+# WeatherLink API Backfill Service
 
-Historical data backfill service for WeatherLink weather stations.
+Historical data backfill service for WeatherLink weather stations that fetches data from the WeatherLink API and publishes to Kafka topics.
+
+**Data Flow**: WeatherLink API → Kafka
+
+**Use Case**: Populate Kafka with historical data from the API when Kafka topics are missing historical data.
+
+**Note**: This service backfills from WeatherLink API to Kafka. For Kafka→DB backfill, see `weatherlink-kafka-backfill`.
 
 ## Overview
 
@@ -17,19 +23,19 @@ This service fetches historical weather data from the WeatherLink API and publis
 
 ```bash
 # Backfill from start timestamp to end timestamp (Unix timestamps)
-./weatherlink-backfill --start 1768780863 --end 1768865863
+./weatherlink-api-backfill --start 1768780863 --end 1768865863
 
 # Backfill using datetime strings
-./weatherlink-backfill --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+./weatherlink-api-backfill --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
 
 # Backfill from start to now
-./weatherlink-backfill --start 1768780863
+./weatherlink-api-backfill --start 1768780863
 
 # Backfill from datetime to now
-./weatherlink-backfill --start "2026-01-11 18:20:47"
+./weatherlink-api-backfill --start "2026-01-11 18:20:47"
 
 # Custom rate limiting and parallelism
-./weatherlink-backfill --start 1768780863 --requests-per-second 5 --workers 8
+./weatherlink-api-backfill --start 1768780863 --requests-per-second 5 --workers 8
 ```
 
 **Supported timestamp formats:**
@@ -43,19 +49,19 @@ This service fetches historical weather data from the WeatherLink API and publis
 
 ```bash
 # Using helper script (recommended) - Unix timestamp
-./scripts/backfill.sh --start $(date -v-24H +%s)
+./scripts/api-backfill.sh --start $(date -v-24H +%s)
 
 # Using datetime strings
-./scripts/backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+./scripts/api-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
 
 # Or with full command
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-backfill --start $(date -v-24H +%s)
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml run --rm weatherlink-api-backfill --start $(date -v-24H +%s)
 
 # With custom args
-./scripts/backfill.sh --start $(date -v-24H +%s) --end $(date +%s) --requests-per-second 5 --workers 8
+./scripts/api-backfill.sh --start $(date -v-24H +%s) --end $(date +%s) --requests-per-second 5 --workers 8
 
 # Using datetime format with date command
-./scripts/backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
+./scripts/api-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
 ```
 
 ## Configuration
@@ -167,28 +173,28 @@ Conservative rate limiting to stay well under API limits:
 
 ```bash
 # Backfill last 7 days (Unix timestamp)
-./scripts/backfill.sh --start $(date -v-7d +%s)
+./scripts/api-backfill.sh --start $(date -v-7d +%s)
 
 # Backfill last 24 hours (Unix timestamp)
-./scripts/backfill.sh --start $(date -v-24H +%s)
+./scripts/api-backfill.sh --start $(date -v-24H +%s)
 
 # Backfill last 24 hours (datetime format)
-./scripts/backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
+./scripts/api-backfill.sh --start "$(date -v-24H '+%Y-%m-%d %H:%M:%S')"
 
 # Backfill specific date range (using Unix timestamps)
-./scripts/backfill.sh --start 1768780863 --end 1768865863
+./scripts/api-backfill.sh --start 1768780863 --end 1768865863
 
 # Backfill specific date range (using datetime strings)
-./scripts/backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
+./scripts/api-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
 
 # Backfill with date only (assumes 00:00:00)
-./scripts/backfill.sh --start "2026-01-11" --end "2026-01-12"
+./scripts/api-backfill.sh --start "2026-01-11" --end "2026-01-12"
 
 # Backfill with slower rate (if hitting limits)
-./scripts/backfill.sh --start "2026-01-11 18:20:47" --requests-per-second 5
+./scripts/api-backfill.sh --start "2026-01-11 18:20:47" --requests-per-second 5
 
 # Backfill with more workers for faster processing
-./scripts/backfill.sh --start "2026-01-11" --workers 8
+./scripts/api-backfill.sh --start "2026-01-11" --workers 8
 ```
 
 ## Monitoring

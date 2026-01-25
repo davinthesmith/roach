@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"weather-sql/models"
+	"weatherlink-kafka-backfill/models"
 )
 
 // DeviceRepository handles database operations for devices

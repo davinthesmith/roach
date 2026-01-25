@@ -2,6 +2,140 @@
 
 ## 2026-01-25
 
+### Kafka Backfill Service - Station Metadata Processing Fix
+
+#### Fixed
+- **weatherlink-kafka-backfill service**: Station metadata messages are now processed correctly
+- **weatherlink-materializer service**: Station metadata messages are now processed correctly
+  - **Root Cause**: Station metadata has different structure than device metadata
+    - Device metadata: Has `lsid` field for specific device
+    - Station metadata: Has `stations` array with station-level information
+  - **Solution**: Enhanced `MetadataProcessor` (in both services) to detect and handle both message formats
+    - Automatically detects station metadata by checking for `stations` array
+    - Updates all devices at a station with station_id, station_name, station_id_uuid
+    - No more orphaned messages from `weather.metadata.station` topic
+  
+#### Added
+- **DeviceRepository.UpdateStationInfo()**: New method to update station info for all devices
+  - Updates station_id, station_name, station_id_uuid for all devices at a station
+  - Logs number of devices updated
+  - Thread-safe database operation
+
+#### Changed
+- **MetadataProcessor.ProcessMessage()**: Enhanced to handle two metadata formats
+  - Checks for `stations` array (station metadata) vs `lsid` field (device metadata)
+  - Routes to appropriate handler: `processStationMetadata()` or device upsert
+  - Both formats are now processed without errors
+- **MetadataProcessor.processStationMetadata()**: New method for station-level updates
+  - Iterates through stations array (typically one station)
+  - Extracts station_id, station_name, station_id_uuid
+  - Updates all devices at that station via `UpdateStationInfo()`
+
+#### Technical Details
+- **Message format detection**:
+  ```go
+  if stations, ok := metadata["stations"].([]interface{}); ok {
+      // Station metadata format
+      return p.processStationMetadata(ctx, msg, stations)
+  }
+  // Otherwise device metadata format (has lsid)
+  ```
+- **Station metadata structure**:
+  ```json
+  {
+    "stations": [{
+      "station_id": 228773,
+      "station_name": "Bellevue",
+      "station_id_uuid": "a7a3248e-d78f-4ab4-9785-a96abd084493"
+    }],
+    "generated_at": 1769374906
+  }
+  ```
+- **Device updates**: Updates all devices with matching station_id or NULL station_id
+
+#### Impact
+- **Before**: 4 orphaned messages per backfill run from station metadata
+- **After**: 0 orphaned messages - all station metadata processed successfully
+- Station information now properly populated across all devices
+
+#### Documentation
+- **README.md**: Updated metadata processing section
+  - Clarified station metadata vs device metadata formats
+  - Removed incorrect advice about ignoring station metadata orphans
+  - Added explanation of station metadata handling
+
+### Kafka Backfill Service - Comprehensive Orphaned Message Tracking
+
+#### Enhanced
+- **weatherlink-kafka-backfill service**: Now saves ALL failed messages to `orphaned_messages` table
+  - **Metadata processing failures**: Station, sensor, and catalog metadata errors are now captured
+    - Missing LSID in metadata messages
+    - Failed JSON parsing in metadata
+    - Database upsert failures for devices
+    - Missing sensor_type or data_structures in catalog messages
+  - **Data processing failures**: Existing orphan tracking for data messages improved
+    - Missing device (LSID not found in database)
+    - Failed JSON parsing in message body
+    - Failed tag creation in database
+  - **Complete message storage**: All orphaned messages stored with full headers and body for reprocessing
+  - **Final statistics**: Backfill completion report now includes orphan count if any failures occurred
+
+#### Changed
+- **MetadataProcessor**: Updated to accept `OrphanRepository` and save failed messages
+  - Saves orphans for parse errors, missing LSID, and upsert failures
+  - All metadata processing errors now preserved for investigation
+- **CatalogProcessor**: Updated to accept `OrphanRepository` and save failed messages
+  - Saves orphans for parse errors, missing sensor_type, and missing data_structures
+  - Catalog processing errors now preserved for investigation
+- **WorkerPool**: Improved orphan saving with detailed error messages
+  - Enhanced error logging when saving orphans fails
+  - More descriptive reason strings in orphaned_messages table
+- **Final statistics**: Enhanced backfill completion report
+  - Shows orphan count if any messages failed
+  - Directs users to check `orphaned_messages` table for details
+
+#### Technical Details
+- **Orphan reasons tracked**:
+  - Data messages: `missing_device`, `failed to parse message body`, `failed_to_create_tag`
+  - Metadata messages: `missing or invalid lsid in metadata`, `failed to parse metadata`, `failed to upsert device`
+  - Catalog messages: `missing sensor_type in catalog message`, `missing data_structures in catalog message`
+- **Database schema**: Existing `orphaned_messages` table (from migration 001)
+  - Stores topic, partition, offset for Kafka tracking
+  - Stores lsid, timestamp, tag_name for debugging
+  - Stores complete message_headers and message_body as JSONB for reprocessing
+  - Tracks reprocessed status for workflow management
+
+#### Documentation
+- **README.md**: Updated with comprehensive orphaned message documentation
+  - Added "Orphaned Messages" section under "Monitoring"
+  - Lists all orphan types with descriptions
+  - Provides troubleshooting guide for common orphan reasons
+  - Includes SQL queries for investigating orphaned messages
+  - Shows how to mark messages as reprocessed after manual fixes
+
+#### Usage
+```bash
+# Run backfill with metadata
+./scripts/kafka-backfill.sh --start-offset 0 --metadata
+
+# Check completion stats (now includes orphan count)
+# === BACKFILL COMPLETE ===
+# Messages processed: 5892
+# Processing errors: 0
+# Records inserted: numeric=173619, text=8802, null=47119
+# Total batch flushes: 463
+# Orphaned messages: 4 (check orphaned_messages table)
+# ========================
+
+# Query orphaned messages by reason
+docker exec roach-postgres psql -U roach -d roach -c \
+  "SELECT reason, COUNT(*) FROM orphaned_messages WHERE NOT reprocessed GROUP BY reason;"
+
+# View details of orphaned messages
+docker exec roach-postgres psql -U roach -d roach -c \
+  "SELECT id, topic, partition, offset, lsid, reason, created_at FROM orphaned_messages ORDER BY created_at DESC LIMIT 10;"
+```
+
 ### Backfill Service Performance Optimization
 
 #### Changed

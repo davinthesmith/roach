@@ -112,6 +112,7 @@ func (p *CatalogProcessor) ProcessMessage(ctx context.Context, msg kafka.Message
 
 				// Update in-memory cache with complete metadata
 				metadata := &models.FieldMetadata{
+					FieldName:         fieldName,
 					FieldType:         fieldType,
 					Units:             units,
 					Description:       dsDescription,
@@ -160,9 +161,8 @@ func (p *CatalogProcessor) Listen(ctx context.Context, reader *kafka.Reader, enr
 	}
 }
 
-// Helper to extract field name from catalog entry (placeholder)
+// Helper to extract field name from catalog entry
 func getFieldNameFromEntry(entry *models.FieldMetadata) string {
-	// This is used during LoadCatalog from DB, but we need to track field names
-	// The DB schema should have field_name column
-	return ""
+	// The FieldName is now directly available in the FieldMetadata struct
+	return entry.FieldName
 }

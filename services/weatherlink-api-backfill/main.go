@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"weatherlink-backfill/config"
-	"weatherlink-backfill/service"
+	"weatherlink-api-backfill/config"
+	"weatherlink-api-backfill/service"
 
 	"github.com/roach/weatherlink-lib/api"
 	"github.com/roach/weatherlink-lib/kafka"

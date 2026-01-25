@@ -54,11 +54,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weatherlink-backfill:
+  weatherlink-api-backfill:
     build:
       context: ./services
-      dockerfile: weatherlink-backfill/Dockerfile
-    container_name: roach-weatherlink-backfill
+      dockerfile: weatherlink-api-backfill/Dockerfile
+    container_name: roach-weatherlink-api-backfill
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
       - WEATHERLINK_API_SECRET=${WEATHERLINK_API_SECRET}
@@ -67,6 +67,28 @@ services:
       - LOG_LEVEL=info
     depends_on:
       kafka:
+        condition: service_healthy
+    networks:
+      - roach-network
+    profiles:
+      - tools  # Only start when explicitly requested
+
+  weatherlink-kafka-backfill:
+    build:
+      context: ./services/weatherlink-kafka-backfill
+      dockerfile: Dockerfile
+    container_name: roach-weatherlink-kafka-backfill
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
+      - WORKER_POOL_SIZE=8
+      - BATCH_SIZE=500
+      - BATCH_FLUSH_INTERVAL_MS=1000
+      - LOG_LEVEL=info
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - roach-network

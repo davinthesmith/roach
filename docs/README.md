@@ -3,10 +3,11 @@
 ## Documentation Guidelines
 
 **IMPORTANT**
+**IMPORTANT**
 When working with this project:
 1. **DO NOT generate additional .md files in the project root directory** - New documentation belongs in `docs/` directory. If new features are added that impact user or developer experience, update documentation in `docs/`. Keep it terse and optimized for AI Agents.
 2. **NO historical information outside of CHANGELOG.md** - All changes, fixes, checklists, summaries, and updates belong in CHANGELOG.md only
-**IMPORTANT**
+3. **DO keep AI-CONTEXT.md updated**: - Ensure any pertinent changes are included. (optimized)
 
 **For AI Agents**: Start with [AI-CONTEXT.md](AI-CONTEXT.md) - single file with 80% of what you need (740 lines).
 

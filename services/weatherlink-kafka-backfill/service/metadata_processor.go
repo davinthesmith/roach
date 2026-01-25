@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/segmentio/kafka-go"
 
-	"weather-sql/cache"
-	"weather-sql/repository"
+	"weatherlink-kafka-backfill/cache"
+	"weatherlink-kafka-backfill/models"
+	"weatherlink-kafka-backfill/repository"
 )
 
-// MetadataProcessor handles metadata message processing
+// MetadataProcessor handles metadata message processing for backfill
 type MetadataProcessor struct {
 	deviceRepo *repository.DeviceRepository
 	orphanRepo *repository.OrphanRepository
@@ -29,22 +29,7 @@ func NewMetadataProcessor(deviceRepo *repository.DeviceRepository, orphanRepo *r
 	}
 }
 
-// LoadDevices loads devices from database into cache
-func (p *MetadataProcessor) LoadDevices(ctx context.Context) error {
-	devices, err := p.deviceRepo.LoadAll(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load devices: %w", err)
-	}
-
-	for _, device := range devices {
-		p.cache.SetDevice(device.LSID, device)
-	}
-
-	log.Printf("Loaded %d devices into cache", len(devices))
-	return nil
-}
-
-// ProcessMessage processes a metadata message
+// ProcessMessage processes a metadata message (device/station)
 func (p *MetadataProcessor) ProcessMessage(ctx context.Context, msg kafka.Message) error {
 	var metadata map[string]interface{}
 	if err := json.Unmarshal(msg.Value, &metadata); err != nil {
@@ -75,8 +60,13 @@ func (p *MetadataProcessor) ProcessMessage(ctx context.Context, msg kafka.Messag
 
 	log.Printf("Upserted device %d", int(lsid))
 
-	// Reload devices to refresh cache
-	return p.LoadDevices(ctx)
+	// Update cache immediately (avoid full reload for performance)
+	device := p.extractDeviceFromMetadata(metadata)
+	if device != nil {
+		p.cache.SetDevice(device.LSID, device)
+	}
+
+	return nil
 }
 
 // processStationMetadata processes station-level metadata that applies to multiple devices
@@ -114,33 +104,38 @@ func (p *MetadataProcessor) processStationMetadata(ctx context.Context, msg kafk
 		log.Printf("Updated station info for station_id=%d (%s)", int(stationID), stationName)
 	}
 
-	// Reload devices to refresh cache with updated station info
-	return p.LoadDevices(ctx)
+	return nil
 }
 
-// Listen listens for metadata messages
-func (p *MetadataProcessor) Listen(ctx context.Context, reader *kafka.Reader) {
-	log.Println("Starting metadata listener...")
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			msg, err := reader.FetchMessage(ctx)
-			if err != nil {
-				log.Printf("Error fetching metadata message: %v", err)
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			if err := p.ProcessMessage(ctx, msg); err != nil {
-				log.Printf("Error processing metadata message: %v", err)
-			}
-
-			if err := reader.CommitMessages(ctx, msg); err != nil {
-				log.Printf("Error committing metadata message: %v", err)
-			}
-		}
+// extractDeviceFromMetadata extracts a Device model from metadata map
+func (p *MetadataProcessor) extractDeviceFromMetadata(metadata map[string]interface{}) *models.Device {
+	lsid, ok := metadata["lsid"].(float64)
+	if !ok {
+		return nil
 	}
+
+	device := &models.Device{
+		LSID: int(lsid),
+	}
+
+	if sensorType, ok := metadata["sensor_type"].(float64); ok {
+		device.SensorType = int(sensorType)
+	}
+
+	if category, ok := metadata["category"].(string); ok {
+		device.Category = category
+	}
+
+	if manufacturer, ok := metadata["manufacturer"].(string); ok {
+		device.Manufacturer = manufacturer
+	}
+
+	if productName, ok := metadata["product_name"].(string); ok {
+		device.ProductName = productName
+	}
+
+	// Note: rt_data_structure_type may not be in metadata message, that's ok
+	// It will be populated from actual data messages
+
+	return device
 }

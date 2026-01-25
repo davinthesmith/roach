@@ -18,7 +18,8 @@ services:
       - ZOOKEEPER_CLIENT_PORT=2181
       - ZOOKEEPER_TICK_TIME=2000
     volumes:
-      - ./data/zookeeper:/var/lib/zookeeper/data
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
     networks:
       - roach-network
     healthcheck:
@@ -66,7 +67,7 @@ services:
       # Offset configuration
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes:
-      - ./data/kafka:/var/lib/kafka/data
+      - kafka-data:/var/lib/kafka/data
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -74,9 +75,10 @@ services:
       - roach-network
     healthcheck:
       test: kafka-broker-api-versions --bootstrap-server localhost:29092
-      interval: 30s
+      interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 120s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -131,4 +133,8 @@ networks:
 
 volumes:
   kafka-data:
+    name: roach-kafka-data
   zookeeper-data:
+    name: roach-zookeeper-data
+  zookeeper-log:
+    name: roach-zookeeper-log

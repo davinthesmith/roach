@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"weather-sql/models"
+	"weatherlink-kafka-backfill/models"
 )
 
 // CatalogRepository handles database operations for sensor catalog

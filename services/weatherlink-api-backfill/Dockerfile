@@ -8,16 +8,16 @@ RUN apk add --no-cache gcc musl-dev pkgconfig librdkafka-dev cyrus-sasl-dev
 # Copy weatherlink-lib first (shared library)
 COPY weatherlink-lib /app/weatherlink-lib
 
-# Copy weatherlink-backfill
-COPY weatherlink-backfill /app/weatherlink-backfill
+# Copy weatherlink-api-backfill
+COPY weatherlink-api-backfill /app/weatherlink-api-backfill
 
-WORKDIR /app/weatherlink-backfill
+WORKDIR /app/weatherlink-api-backfill
 
 # Download dependencies
 RUN go mod download
 
 # Build with CGO enabled (required for confluent-kafka-go)
-RUN CGO_ENABLED=1 GOOS=linux go build -tags dynamic -o weatherlink-backfill .
+RUN CGO_ENABLED=1 GOOS=linux go build -tags dynamic -o weatherlink-api-backfill .
 
 FROM alpine:latest
 
@@ -26,6 +26,6 @@ RUN apk --no-cache add ca-certificates tzdata librdkafka
 
 WORKDIR /root/
 
-COPY --from=builder /app/weatherlink-backfill/weatherlink-backfill .
+COPY --from=builder /app/weatherlink-api-backfill/weatherlink-api-backfill .
 
-ENTRYPOINT ["./weatherlink-backfill"]
+ENTRYPOINT ["./weatherlink-api-backfill"]
