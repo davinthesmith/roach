@@ -32,7 +32,7 @@ vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION
 
 # Monitor
 ./scripts/status.sh             # Check health
-./scripts/logs.sh weatherlink-ingest  # View service logs
+./scripts/logs.sh weatherlink-ingest-to-kafka-to-kafka  # View service logs
 docker ps                       # Check containers
 
 # Stop
@@ -77,28 +77,28 @@ docker ps                       # Check containers
 
 ### Application Layer
 
-**weatherlink-ingest** (`roach-weatherlink-ingest`)
+**weatherlink-ingest-to-kafka-to-kafka** (`roach-weatherlink-ingest-to-kafka-to-kafka`)
 - Language: Go
 - Purpose: Real-time data ingestion (API → Kafka)
 - Interval: 5 minutes (configurable via `FETCH_INTERVAL`)
 - Topics Published: 7 (4 data, 3 metadata)
 - Deduplication: Timestamp-based cache with PostgreSQL rehydration
 
-**weatherlink-materializer** (`roach-weatherlink-materializer`)
+**weatherlink-materialize-to-sql** (`roach-weatherlink-materialize-to-sql`)
 - Language: Go
 - Purpose: Real-time materialization (Kafka → PostgreSQL)
 - Consumers: All `weather.*` topics
 - Features: Auto-tag creation, metadata enrichment, orphaned message tracking
 - Performance: Batched writes with COPY protocol, worker pool processing
 
-**weatherlink-api-backfill** (`roach-weatherlink-api-backfill`)
+**weatherlink-backfill-to-kafka** (`roach-weatherlink-backfill-to-kafka`)
 - Language: Go
 - Purpose: Historical data backfill (API → Kafka)
 - Run Mode: One-shot execution (manual)
 - Features: 24-hour windows, rate limiting (8 req/s), client-side deduplication
 - Use Case: Populate Kafka with historical API data
 
-**weatherlink-kafka-backfill** (`roach-weatherlink-kafka-backfill`)
+**weatherlink-backfill-to-sql** (`roach-weatherlink-backfill-to-sql`)
 - Language: Go
 - Purpose: Database backfill (Kafka → PostgreSQL)
 - Run Mode: One-shot execution (manual)
@@ -111,11 +111,11 @@ docker ps                       # Check containers
 ```
 WeatherLink API (HTTPS)
     ↓ Every 5 minutes
-weatherlink-ingest (Go) - Deduplication
+weatherlink-ingest-to-kafka-to-kafka (Go) - Deduplication
     ↓ Publish JSON messages
 Kafka Broker (Infinite retention)
     ↓ Stream to consumers
-weatherlink-materializer (Go) - Materialization
+weatherlink-materialize-to-sql (Go) - Materialization
     ↓ Batched COPY inserts
 PostgreSQL Database
     ↓ Query layer
@@ -124,13 +124,13 @@ Devices → Tags → Records
 
 **Two-Stage Backfill Strategy**:
 ```
-Stage 1: API → Kafka (weatherlink-api-backfill)
+Stage 1: API → Kafka (weatherlink-backfill-to-kafka)
   - Fetch historical data from WeatherLink API
   - 24-hour windows, rate limited (8 req/s)
   - Client-side deduplication
   - Populates Kafka with missing historical data
 
-Stage 2: Kafka → DB (weatherlink-kafka-backfill)
+Stage 2: Kafka → DB (weatherlink-backfill-to-sql)
   - Replay messages from Kafka topics
   - Configurable offset ranges (earliest to latest)
   - Separate consumer group
@@ -147,10 +147,10 @@ roach-network (Docker bridge)
 │   ├── postgres:5432 (internal), localhost:5432 (external)
 │   └── kafka-ui:8080
 └── Applications
-    ├── weatherlink-ingest (connects to kafka:29092, postgres:5432)
-    ├── weatherlink-materializer (connects to kafka:29092, postgres:5432)
-    ├── weatherlink-api-backfill (connects to kafka:29092) [manual]
-    └── weatherlink-kafka-backfill (connects to kafka:29092, postgres:5432) [manual]
+    ├── weatherlink-ingest-to-kafka-to-kafka (connects to kafka:29092, postgres:5432)
+    ├── weatherlink-materialize-to-sql (connects to kafka:29092, postgres:5432)
+    ├── weatherlink-backfill-to-kafka (connects to kafka:29092) [manual]
+    └── weatherlink-backfill-to-sql (connects to kafka:29092, postgres:5432) [manual]
 ```
 
 ## Configuration
@@ -170,7 +170,7 @@ POSTGRES_PASSWORD=<secure_password>
 
 ### Optional Environment Variables
 
-**weatherlink-ingest**:
+**weatherlink-ingest-to-kafka**:
 ```bash
 KAFKA_BROKER=kafka:29092        # Default
 POSTGRES_DSN=host=postgres...   # Default provided
@@ -178,7 +178,7 @@ FETCH_INTERVAL=5m               # 5 minutes default (Go duration format)
 LOG_LEVEL=info                  # debug|info|warn|error
 ```
 
-**weatherlink-materializer**:
+**weatherlink-materialize-to-sql**:
 ```bash
 KAFKA_BROKER=kafka:29092        # Default
 POSTGRES_DSN=host=postgres...   # Default provided
@@ -188,14 +188,14 @@ WORKER_POOL_SIZE=4              # Default
 BATCH_FLUSH_INTERVAL_MS=500     # Default
 ```
 
-**weatherlink-api-backfill**:
+**weatherlink-backfill-to-kafka**:
 ```bash
 KAFKA_BROKER=kafka:29092        # Default
 LOG_LEVEL=info                  # debug|info|warn|error
 # Plus CLI flags: --start, --end, --workers, --requests-per-second
 ```
 
-**weatherlink-kafka-backfill**:
+**weatherlink-backfill-to-sql**:
 ```bash
 KAFKA_BROKER=kafka:29092        # Default
 POSTGRES_DSN=host=postgres...   # Default provided
@@ -216,7 +216,7 @@ END_OFFSET=-1                   # -1=latest
 - Data: `./data/kafka`, `./data/zookeeper`, `./data/postgres`
 - Scripts: `./scripts/*.sh`
 - Documentation: `./docs/*.md`
-- Services: `./services/weatherlink-ingest/`, `./services/weatherlink-materializer/`, `./services/weatherlink-api-backfill/`, `./services/weatherlink-kafka-backfill/`, `./services/weatherlink-lib/`
+- Services: `./services/weatherlink-ingest-to-kafka-to-kafka/`, `./services/weatherlink-materialize-to-sql/`, `./services/weatherlink-backfill-to-kafka/`, `./services/weatherlink-backfill-to-sql/`, `./services/weatherlink-lib/`
 
 ### Common Customizations
 
@@ -224,7 +224,7 @@ END_OFFSET=-1                   # -1=latest
 ```yaml
 # docker-compose.yml
 services:
-  weatherlink-ingest:
+  weatherlink-ingest-to-kafka:
     environment:
       - FETCH_INTERVAL=10m  # Change from 5m to 10m
 ```
@@ -246,10 +246,10 @@ kafka:
 - Action indicates the operation (ingest, backfill, materializer)
 
 **Services**:
-- **weatherlink-ingest**: Real-time API → Kafka (streaming)
-- **weatherlink-materializer**: Real-time Kafka → PostgreSQL (streaming)
-- **weatherlink-api-backfill**: Historical API → Kafka (one-shot)
-- **weatherlink-kafka-backfill**: Historical Kafka → PostgreSQL (one-shot)
+- **weatherlink-ingest-to-kafka**: Real-time API → Kafka (streaming)
+- **weatherlink-materialize-to-sql**: Real-time Kafka → PostgreSQL (streaming)
+- **weatherlink-backfill-to-kafka**: Historical API → Kafka (one-shot)
+- **weatherlink-backfill-to-sql**: Historical Kafka → PostgreSQL (one-shot)
 
 ### weatherlink-lib (Shared Library)
 
@@ -261,13 +261,13 @@ kafka:
 - Data models and type definitions
 - Hash utilities
 
-### weatherlink-ingest Service
+### weatherlink-ingest-to-kafka Service
 
 **Purpose**: Fetch weather data from WeatherLink v2 API and publish to Kafka
 
 **Package Structure**:
 ```
-weatherlink-ingest/
+weatherlink-ingest-to-kafka/
 ├── main.go              # Entry point
 ├── config/              # Environment variable parsing
 │   └── config.go
@@ -289,13 +289,13 @@ weatherlink-ingest/
 
 **Dependencies**: `github.com/segmentio/kafka-go`, `github.com/lib/pq`
 
-### weatherlink-materializer Service
+### weatherlink-materialize-to-sql Service
 
 **Purpose**: Materialize Kafka messages to PostgreSQL with automatic tag creation
 
 **Package Structure**:
 ```
-weatherlink-materializer/
+weatherlink-materialize-to-sql/
 ├── main.go              # Entry point (~75 lines)
 ├── config/              # Configuration
 │   └── config.go
@@ -449,8 +449,8 @@ sensor_catalog → enriches → tags (unit, description)
 ./scripts/stop-all.sh           # Stop all
 
 # Restart
-./scripts/restart.sh                # Restart all
-./scripts/restart.sh weatherlink-ingest  # Restart specific service
+./scripts/restart-all.sh                # Restart all
+./scripts/restart-all.sh weatherlink-ingest-to-kafka  # Restart specific service
 
 # Status
 ./scripts/status.sh             # System status
@@ -463,7 +463,7 @@ docker stats                    # Resource usage
 ```bash
 # View logs
 ./scripts/logs.sh                    # All services
-./scripts/logs.sh weatherlink-ingest    # Specific service
+./scripts/logs.sh weatherlink-ingest-to-kafka    # Specific service
 docker logs -f roach-kafka           # Follow logs
 
 # Kafka UI
@@ -519,8 +519,8 @@ docker exec roach-kafka kafka-console-consumer \
 ./scripts/start-all.sh build         # Rebuild all
 
 # Or rebuild specific service
-docker compose build weatherlink-ingest
-docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weatherlink-ingest
+docker compose build weatherlink-ingest-to-kafka
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weatherlink-ingest-to-kafka
 ```
 
 ## Quick Troubleshooting
@@ -539,14 +539,14 @@ lsof -i :8080  # Kafka UI
 **Fix**: Wait for health check
 ```bash
 docker ps  # Look for "(healthy)" status
-./scripts/restart.sh weatherlink-ingest
+./scripts/restart-all.sh weatherlink-ingest-to-kafka
 ```
 
 ### No Data Publishing
 **Check**: API credentials, service logs
 ```bash
-docker exec roach-weatherlink-ingest env | grep WEATHERLINK
-./scripts/logs.sh weatherlink-ingest
+docker exec roach-weatherlink-ingest-to-kafka env | grep WEATHERLINK
+./scripts/logs.sh weatherlink-ingest-to-kafka
 ```
 
 ### Kafka UI Not Loading

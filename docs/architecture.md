@@ -78,7 +78,7 @@ ZOOKEEPER_TICK_TIME: 2000
 
 ## Service Implementation Details
 
-### weatherlink-ingest Architecture
+### weatherlink-ingest-to-kafka Architecture
 
 **Goroutine Structure**:
 ```
@@ -103,15 +103,15 @@ main goroutine
 
 **Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types, then publishes each sensor type as a separate message (avoids Kafka size limits, enables incremental consumer processing)
 
-### weatherlink-materializer Architecture
+### weatherlink-materialize-to-sql Architecture
 
 **Consumer Groups**:
-- `weatherlink-materializer-metadata` - Consumes `weather.metadata.sensors`
-- `weatherlink-materializer-catalog` - Consumes `weather.metadata.catalog`
-- `weatherlink-materializer-data-iss` - Consumes `weather.iss`
-- `weatherlink-materializer-data-barometer` - Consumes `weather.barometer`
-- `weatherlink-materializer-data-indoor` - Consumes `weather.indoor`
-- `weatherlink-materializer-data-health` - Consumes `weather.health`
+- `weatherlink-materialize-to-sql-metadata` - Consumes `weather.metadata.sensors`
+- `weatherlink-materialize-to-sql-catalog` - Consumes `weather.metadata.catalog`
+- `weatherlink-materialize-to-sql-data-iss` - Consumes `weather.iss`
+- `weatherlink-materialize-to-sql-data-barometer` - Consumes `weather.barometer`
+- `weatherlink-materialize-to-sql-data-indoor` - Consumes `weather.indoor`
+- `weatherlink-materialize-to-sql-data-health` - Consumes `weather.health`
 
 **Processing Flow**:
 ```
@@ -148,10 +148,10 @@ Message arrives
 
 | From | To | Address | Protocol | Purpose |
 |------|----|---------| ---------|---------|
-| weatherlink-ingest | Kafka | kafka:29092 | PLAINTEXT | Publish messages |
-| weatherlink-ingest | PostgreSQL | postgres:5432 | TCP | Cache rehydration |
-| weatherlink-materializer | Kafka | kafka:29092 | PLAINTEXT | Consume messages |
-| weatherlink-materializer | PostgreSQL | postgres:5432 | TCP | Materialize data |
+| weatherlink-ingest-to-kafka | Kafka | kafka:29092 | PLAINTEXT | Publish messages |
+| weatherlink-ingest-to-kafka | PostgreSQL | postgres:5432 | TCP | Cache rehydration |
+| weatherlink-materialize-to-sql | Kafka | kafka:29092 | PLAINTEXT | Consume messages |
+| weatherlink-materialize-to-sql | PostgreSQL | postgres:5432 | TCP | Materialize data |
 | kafka-ui | Kafka | kafka:29092 | PLAINTEXT | Monitoring |
 | Kafka | Zookeeper | zookeeper:2181 | TCP | Coordination |
 | Host | Kafka | localhost:9092 | PLAINTEXT | External access |
@@ -173,8 +173,8 @@ Message arrives
 | Kafka | 1-5% | 1-2 GB | ~0.3 MB/day (with compression) |
 | Zookeeper | <1% | 100-200 MB | ~1 MB/day |
 | PostgreSQL | 1-3% | 100-500 MB | ~2-5 MB/day |
-| weatherlink-ingest | <1% | 20-50 MB | Minimal |
-| weatherlink-materializer | 1-3% | 50-100 MB | Minimal |
+| weatherlink-ingest-to-kafka | <1% | 20-50 MB | Minimal |
+| weatherlink-materialize-to-sql | 1-3% | 50-100 MB | Minimal |
 | Kafka UI | 1-2% | 100-200 MB | Minimal |
 
 **Total Baseline**: ~2-5% CPU, ~1.5-3 GB RAM, ~3-6 MB/day disk
@@ -196,14 +196,14 @@ Message arrives
 ```
 roach/
 ├── docker-compose.infrastructure.yml  # Kafka, Zookeeper, PostgreSQL, UI
-├── docker-compose.yml                 # weatherlink-ingest, weatherlink-materializer
+├── docker-compose.yml                 # weatherlink-ingest-to-kafka, weatherlink-materialize-to-sql
 ├── .env                              # Credentials (gitignored)
 ├── .env.example                      # Template
 ├── scripts/
 │   ├── start-all.sh                  # Start infrastructure + services
 │   ├── start-infra.sh                # Start infrastructure only
 │   ├── stop-all.sh                   # Stop all
-│   ├── restart.sh                    # Restart service(s)
+│   ├── restart-all.sh                    # Restart service(s)
 │   ├── logs.sh                       # View logs
 │   ├── status.sh                     # System status
 │   └── db/
@@ -229,14 +229,14 @@ roach/
 │   ├── zookeeper/                    # Zookeeper data
 │   └── postgres/                     # PostgreSQL data
 └── services/
-    ├── weatherlink-ingest/              # Real-time data ingestion
+    ├── weatherlink-ingest-to-kafka/              # Real-time data ingestion
     │   ├── main.go                   # Entry point
     │   ├── Dockerfile                # Multi-stage build
     │   ├── go.mod, go.sum            # Go dependencies
     │   ├── config/, models/, api/    # Packages
     │   ├── service/, kafka/, internal/
     │   └── README.md
-    └── weatherlink-materializer/                  # Kafka→PostgreSQL materializer
+    └── weatherlink-materialize-to-sql/                  # Kafka→PostgreSQL materializer
         ├── main.go                   # Entry point
         ├── Dockerfile                # Multi-stage build
         ├── go.mod, go.sum            # Go dependencies
@@ -299,7 +299,7 @@ Use migration framework:
    GET /v2/sensors/{station_id} (on change)
    GET /v2/sensor-catalog (on change)
    
-2. weatherlink-ingest
+2. weatherlink-ingest-to-kafka
    ↓
    Deduplicate (timestamp cache)
    Parse response
@@ -312,7 +312,7 @@ Use migration framework:
    Persist to disk (infinite retention)
    Replicate (if multi-broker)
    
-4. weatherlink-materializer
+4. weatherlink-materialize-to-sql
    ↓
    Consume messages
    Lookup/create devices
@@ -330,11 +330,11 @@ Use migration framework:
 ```
 1. API: Sensors/Catalog/Station
    ↓
-2. weatherlink-ingest: Hash comparison
+2. weatherlink-ingest-to-kafka: Hash comparison
    ↓ (only if changed)
 3. Kafka: Metadata topics
    ↓
-4. weatherlink-materializer: Upsert to DB + cache
+4. weatherlink-materialize-to-sql: Upsert to DB + cache
    ↓
 5. Tag enrichment: Backfill units/descriptions
 ```
@@ -357,5 +357,5 @@ Use migration framework:
 ### Services
 
 - Increase `FETCH_INTERVAL` to reduce API calls and Kafka writes
-- Adjust `BATCH_SIZE` in weatherlink-materializer for bulk inserts
+- Adjust `BATCH_SIZE` in weatherlink-materialize-to-sql for bulk inserts
 - Use `LOG_LEVEL=warn` or `error` in production to reduce I/O

@@ -67,10 +67,10 @@ roach/
 ├── docs/                              # Documentation
 ├── services/                          # Service implementations
 │   ├── weatherlink-lib/              # Shared WeatherLink API client and models
-│   ├── weatherlink-ingest/           # Real-time data ingestion (API → Kafka)
-│   ├── weatherlink-materializer/     # Real-time materialization (Kafka → PostgreSQL)
-│   ├── weatherlink-api-backfill/     # Historical backfill (API → Kafka)
-│   └── weatherlink-kafka-backfill/   # Database backfill (Kafka → PostgreSQL)
+│   ├── weatherlink-ingest-to-kafka/           # Real-time data ingestion (API → Kafka)
+│   ├── weatherlink-materialize-to-sql/     # Real-time materialization (Kafka → PostgreSQL)
+│   ├── weatherlink-backfill-to-kafka/     # Historical backfill (API → Kafka)
+│   └── weatherlink-backfill-to-sql/   # Database backfill (Kafka → PostgreSQL)
 └── data/                             # Persistent data
 ```
 
@@ -109,8 +109,8 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/status.sh
 
 # View logs
-./scripts/logs.sh weatherlink-ingest
-./scripts/logs.sh weatherlink-materializer
+./scripts/logs.sh weatherlink-ingest-to-kafka
+./scripts/logs.sh weatherlink-materialize-to-sql
 
 # Query database
 ./scripts/db/query.sh stats
@@ -121,18 +121,18 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/db/migrate.sh down    # Rollback last migration
 
 # Historical data backfill (API → Kafka)
-./scripts/api-backfill.sh --start $(date -v-24H +%s)
-./scripts/api-backfill.sh --start 1768780863 --end 1768865863
+./scripts/weatherlink-backfill-to-kafka.sh --start $(date -v-24H +%s)
+./scripts/weatherlink-backfill-to-kafka.sh --start 1768780863 --end 1768865863
 
 # Database backfill (Kafka → PostgreSQL)
-./scripts/kafka-backfill.sh
-./scripts/kafka-backfill.sh --topics weather.iss --workers 16
+./scripts/weatherlink-backfill-to-sql.sh
+./scripts/weatherlink-backfill-to-sql.sh --topics weather.iss --workers 16
 
 # Test API backfill with small window
 ./scripts/test-backfill.sh
 
 # Restart service
-./scripts/restart.sh weather
+./scripts/restart-all.sh weather
 
 # Stop all
 ./scripts/stop-all.sh
@@ -148,14 +148,14 @@ Shared library containing:
 - Kafka producer with idempotent guarantees
 - Common data models and utilities
 
-### weatherlink-ingest
+### weatherlink-ingest-to-kafka
 Real-time data ingestion service (API → Kafka):
 - Fetches current conditions every 5 minutes (configurable)
 - Publishes to Kafka topics based on sensor category
 - Automatic metadata updates daily
 - Timestamp-based duplicate prevention
 
-### weatherlink-materializer
+### weatherlink-materialize-to-sql
 Real-time materialization service (Kafka → PostgreSQL):
 - Consumes from all weather topics
 - Stores time-series data in normalized tables
@@ -163,7 +163,7 @@ Real-time materialization service (Kafka → PostgreSQL):
 - Handles orphaned messages gracefully
 - High-throughput batched writes using COPY protocol
 
-### weatherlink-api-backfill
+### weatherlink-backfill-to-kafka
 Historical API backfill tool (API → Kafka):
 - Fetches historic data from WeatherLink API
 - Splits large ranges into 24-hour windows
@@ -171,7 +171,7 @@ Historical API backfill tool (API → Kafka):
 - Client-side deduplication prevents duplicates
 - Run manually as needed for historical data
 
-### weatherlink-kafka-backfill
+### weatherlink-backfill-to-sql
 Database backfill tool (Kafka → PostgreSQL):
 - Replays messages from Kafka topics to database
 - Separate consumer group from real-time materializer

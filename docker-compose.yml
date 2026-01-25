@@ -1,11 +1,11 @@
 # ROACH Application Services
 
 services:
-  weatherlink-ingest:
+  weatherlink-ingest-to-kafka:
     build:
       context: ./services
-      dockerfile: weatherlink-ingest/Dockerfile
-    container_name: roach-weatherlink-ingest
+      dockerfile: weatherlink-ingest-to-kafka/Dockerfile
+    container_name: roach-weatherlink-ingest-to-kafka
     restart: unless-stopped
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
@@ -29,11 +29,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weatherlink-materializer:
+  weatherlink-materialize-to-sql:
     build:
-      context: ./services/weatherlink-materializer
+      context: ./services/weatherlink-materialize-to-sql
       dockerfile: Dockerfile
-    container_name: roach-weatherlink-materializer
+    container_name: roach-weatherlink-materialize-to-sql
     restart: unless-stopped
     environment:
       - KAFKA_BROKER=kafka:29092
@@ -54,11 +54,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weatherlink-api-backfill:
+  weatherlink-backfill-to-kafka:
     build:
       context: ./services
-      dockerfile: weatherlink-api-backfill/Dockerfile
-    container_name: roach-weatherlink-api-backfill
+      dockerfile: weatherlink-backfill-to-kafka/Dockerfile
+    container_name: roach-weatherlink-backfill-to-kafka
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
       - WEATHERLINK_API_SECRET=${WEATHERLINK_API_SECRET}
@@ -73,11 +73,11 @@ services:
     profiles:
       - tools  # Only start when explicitly requested
 
-  weatherlink-kafka-backfill:
+  weatherlink-backfill-to-sql:
     build:
-      context: ./services/weatherlink-kafka-backfill
+      context: ./services/weatherlink-backfill-to-sql
       dockerfile: Dockerfile
-    container_name: roach-weatherlink-kafka-backfill
+    container_name: roach-weatherlink-backfill-to-sql
     environment:
       - KAFKA_BROKER=kafka:29092
       - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
