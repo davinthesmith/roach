@@ -13,10 +13,12 @@ type Device struct {
 	ID                int
 	LSID              int
 	SensorType        int
-	DataStructureType *int
+	DataStructureType *int   // Maps to rt_data_structure_type column (from real-time data)
 	Category          string
 	Manufacturer      string
 	ProductName       string
+	CreatedDate       *int64 // Unix timestamp from WeatherLink API sensors metadata
+	ModifiedDate      *int64 // Unix timestamp from WeatherLink API sensors metadata
 }
 
 // Tag represents a data field/property for a device

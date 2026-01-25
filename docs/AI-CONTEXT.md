@@ -317,9 +317,11 @@ Format: `namespace.category[.subcategory]`
 - Unique: `lsid` (Logical Sensor ID)
 - Core fields: `sensor_type`, `category`, `manufacturer`, `product_name`
 - Extended: `product_number`, `rain_collector_type`, `active`, `tx_id`, `port_number`
-- Parent device: `parent_device_type`, `parent_device_name`, `parent_device_id`
+- Parent device: `parent_device_type`, `parent_device_name`, `parent_device_id`, `parent_device_id_hex`
 - Location: `station_id`, `station_name`, `latitude`, `longitude`, `elevation`
-- Metadata: `metadata` (JSONB), `data_structure_type`
+- Timestamps: `created_date`, `modified_date` (from API), `created_at`, `updated_at` (database)
+- Metadata: `metadata` (JSONB)
+- Real-time: `rt_data_structure_type` (populated from current data messages, not sensors metadata)
 
 **tags** - Field definitions with units and descriptions
 - Primary key: `id` (serial)

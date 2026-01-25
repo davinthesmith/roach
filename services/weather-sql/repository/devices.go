@@ -25,7 +25,7 @@ func (r *DeviceRepository) LoadAll(ctx context.Context) ([]*models.Device, error
 	log.Println("Loading devices from database...")
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, lsid, sensor_type, category, manufacturer, product_name, data_structure_type
+		SELECT id, lsid, sensor_type, category, manufacturer, product_name, rt_data_structure_type as data_structure_type
 		FROM devices
 	`)
 	if err != nil {
@@ -73,6 +73,8 @@ func (r *DeviceRepository) Upsert(ctx context.Context, metadata map[string]inter
 	latitude, _ := metadata["latitude"].(float64)
 	longitude, _ := metadata["longitude"].(float64)
 	elevation, _ := metadata["elevation"].(float64)
+	createdDate, _ := metadata["created_date"].(float64)
+	modifiedDate, _ := metadata["modified_date"].(float64)
 
 	metadataJSON, _ := json.Marshal(metadata)
 
@@ -82,9 +84,9 @@ func (r *DeviceRepository) Upsert(ctx context.Context, metadata map[string]inter
 			product_number, rain_collector_type, active, tx_id, port_number,
 			parent_device_type, parent_device_name, parent_device_id, parent_device_id_hex,
 			station_id, station_id_uuid, station_name, latitude, longitude, elevation, 
-			metadata, updated_at
+			created_date, modified_date, metadata, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW())
 		ON CONFLICT (lsid) DO UPDATE SET
 			sensor_type = EXCLUDED.sensor_type,
 			category = EXCLUDED.category,
@@ -105,21 +107,23 @@ func (r *DeviceRepository) Upsert(ctx context.Context, metadata map[string]inter
 			latitude = EXCLUDED.latitude,
 			longitude = EXCLUDED.longitude,
 			elevation = EXCLUDED.elevation,
+			created_date = EXCLUDED.created_date,
+			modified_date = EXCLUDED.modified_date,
 			metadata = EXCLUDED.metadata,
 			updated_at = NOW()
 	`, int(lsid), int(sensorType), category, manufacturer, productName,
 		productNumber, intOrNil(rainCollectorType), active, intOrNil(txID), intOrNil(portNumber),
 		parentDeviceType, parentDeviceName, intOrNil(parentDeviceID), parentDeviceIDHex,
 		intOrNil(stationID), stringOrNil(stationIDUUID), stationName, floatOrNil(latitude), floatOrNil(longitude), floatOrNil(elevation),
-		metadataJSON)
+		int64OrNil(createdDate), int64OrNil(modifiedDate), metadataJSON)
 
 	return err
 }
 
-// UpdateDataStructureType updates the data_structure_type for a device
+// UpdateDataStructureType updates the rt_data_structure_type for a device
 func (r *DeviceRepository) UpdateDataStructureType(ctx context.Context, lsid, dataStructureType int) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE devices SET data_structure_type = $1, updated_at = NOW() WHERE lsid = $2
+		UPDATE devices SET rt_data_structure_type = $1, updated_at = NOW() WHERE lsid = $2
 	`, dataStructureType, lsid)
 	return err
 }
@@ -137,6 +141,13 @@ func floatOrNil(val float64) interface{} {
 		return nil
 	}
 	return val
+}
+
+func int64OrNil(val float64) interface{} {
+	if val == 0 {
+		return nil
+	}
+	return int64(val)
 }
 
 func stringOrNil(val string) interface{} {

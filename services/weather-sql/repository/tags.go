@@ -85,11 +85,11 @@ func (r *TagRepository) EnrichWithCatalog(ctx context.Context, enrichFunc func(t
 			t.device_id,
 			t.tag_name,
 			d.sensor_type,
-			d.data_structure_type
+			d.rt_data_structure_type
 		FROM tags t
 		JOIN devices d ON t.device_id = d.id
 		WHERE 
-			d.data_structure_type IS NOT NULL
+			d.rt_data_structure_type IS NOT NULL
 			AND (t.unit IS NULL OR t.description IS NULL OR t.metadata IS NULL)
 	`)
 	if err != nil {
@@ -160,11 +160,11 @@ func (r *TagRepository) FindTagsNeedingEnrichment(ctx context.Context) ([]*TagEn
 			t.device_id,
 			t.tag_name,
 			d.sensor_type,
-			d.data_structure_type
+			d.rt_data_structure_type
 		FROM tags t
 		JOIN devices d ON t.device_id = d.id
 		WHERE 
-			d.data_structure_type IS NOT NULL
+			d.rt_data_structure_type IS NOT NULL
 			AND (t.unit IS NULL OR t.description IS NULL OR t.metadata IS NULL)
 	`)
 	if err != nil {

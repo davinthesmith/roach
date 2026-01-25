@@ -53,6 +53,14 @@ Use `IF EXISTS`/`IF NOT EXISTS` for idempotency.
 - Created `sensor_catalog` table for field metadata
 - Added indexes: `idx_devices_active`, `idx_devices_data_structure_type`, `idx_sensor_catalog_lookup`, `idx_sensor_catalog_field`
 
+**002_optimize_device_schema**
+- Added 2 columns to `devices`: `created_date` (BIGINT), `modified_date` (BIGINT) - timestamps from WeatherLink API sensors metadata
+- Renamed column: `data_structure_type` → `rt_data_structure_type` to indicate field is populated from real-time current data messages (not sensors metadata)
+- Added indexes: `idx_devices_created_date`, `idx_devices_modified_date`, `idx_devices_rt_data_structure_type`
+- Updated index: Dropped `idx_devices_data_structure_type`, replaced with `idx_devices_rt_data_structure_type`
+- Added column comments documenting data sources (API metadata vs real-time data)
+- **Purpose**: Complete API coverage and clear data provenance with `rt_` prefix for real-time fields
+
 ## Verification
 
 ```sql
@@ -69,4 +77,15 @@ SELECT COUNT(*) FROM sensor_catalog;
 
 -- View enriched tags
 SELECT tag_name, unit, description FROM tags WHERE unit IS NOT NULL LIMIT 5;
+
+-- Check new device timestamp fields (migration 002)
+SELECT lsid, category, created_date, modified_date, rt_data_structure_type 
+FROM devices 
+ORDER BY lsid;
+
+-- Verify indexes for new columns
+SELECT indexname, indexdef 
+FROM pg_indexes 
+WHERE tablename = 'devices' 
+  AND (indexname LIKE '%created_date%' OR indexname LIKE '%modified_date%' OR indexname LIKE '%rt_data%');
 ```

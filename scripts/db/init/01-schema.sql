@@ -1,5 +1,9 @@
 -- ROACH Database Schema
 -- Device/Tag/Record hierarchy for weather data materialization
+--
+-- Note: This is the initial schema. See migrations/ directory for subsequent changes:
+--   - 001_enhance_tag_and_device_metadata: Added product_number, rain_collector_type, parent_device_*, sensor_catalog table
+--   - 002_optimize_device_schema: Added created_date, modified_date, renamed data_structure_type to rt_data_structure_type
 
 -- Devices Table: Maps to sensors from WeatherLink
 CREATE TABLE devices (
