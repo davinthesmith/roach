@@ -3,7 +3,7 @@
 
 set -e
 
-CONTAINER_NAME="roach-weatherlink-materialize-to-sql"
+CONTAINER_NAME="roach-weatherlink-sql"
 
 echo "Checking orphaned messages..."
 docker exec roach-postgres psql -U roach -d roach -c "
@@ -18,9 +18,9 @@ read -p "Do you want to reprocess orphaned messages? (y/n) " -n 1 -r
 echo
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Restarting weatherlink-materialize-to-sql service to reprocess orphaned messages..."
-    docker compose restart weatherlink-materialize-to-sql
-    echo "Service restarted. Monitor logs with: docker compose logs -f weatherlink-materialize-to-sql"
+    echo "Restarting weatherlink-sql service to reprocess orphaned messages..."
+    docker compose restart weatherlink-sql
+    echo "Service restarted. Monitor logs with: docker compose logs -f weatherlink-sql"
 else
     echo "Cancelled."
 fi

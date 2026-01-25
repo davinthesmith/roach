@@ -1,11 +1,11 @@
 # ROACH Application Services
 
 services:
-  weatherlink-ingest-to-kafka:
+  weatherlink-kafka:
     build:
       context: ./services
-      dockerfile: weatherlink-ingest-to-kafka/Dockerfile
-    container_name: roach-weatherlink-ingest-to-kafka
+      dockerfile: weatherlink-kafka/Dockerfile
+    container_name: roach-weatherlink-kafka
     restart: unless-stopped
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
@@ -29,11 +29,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weatherlink-materialize-to-sql:
+  weatherlink-sql:
     build:
-      context: ./services/weatherlink-materialize-to-sql
+      context: ./services/weatherlink-sql
       dockerfile: Dockerfile
-    container_name: roach-weatherlink-materialize-to-sql
+    container_name: roach-weatherlink-sql
     restart: unless-stopped
     environment:
       - KAFKA_BROKER=kafka:29092
@@ -54,11 +54,11 @@ services:
       retries: 3
       start_period: 10s
 
-  weatherlink-backfill-to-kafka:
+  weatherlink-kafka-backfill:
     build:
       context: ./services
-      dockerfile: weatherlink-backfill-to-kafka/Dockerfile
-    container_name: roach-weatherlink-backfill-to-kafka
+      dockerfile: weatherlink-kafka-backfill/Dockerfile
+    container_name: roach-weatherlink-kafka-backfill
     environment:
       - WEATHERLINK_API_KEY=${WEATHERLINK_API_KEY}
       - WEATHERLINK_API_SECRET=${WEATHERLINK_API_SECRET}
@@ -73,11 +73,11 @@ services:
     profiles:
       - tools  # Only start when explicitly requested
 
-  weatherlink-backfill-to-sql:
+  weatherlink-sql-backfill:
     build:
-      context: ./services/weatherlink-backfill-to-sql
+      context: ./services/weatherlink-sql-backfill
       dockerfile: Dockerfile
-    container_name: roach-weatherlink-backfill-to-sql
+    container_name: roach-weatherlink-sql-backfill
     environment:
       - KAFKA_BROKER=kafka:29092
       - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable

@@ -87,8 +87,8 @@ lsof -i :8080  # Kafka UI
 docker ps  # Check for "(healthy)"
 
 # Restart service
-./scripts/restart-all.sh weatherlink-ingest-to-kafka
-./scripts/restart-all.sh weatherlink-materialize-to-sql
+./scripts/restart-all.sh weatherlink-kafka
+./scripts/restart-all.sh weatherlink-sql
 ```
 
 ### API Authentication Errors
@@ -97,7 +97,7 @@ docker ps  # Check for "(healthy)"
 
 **Check**:
 ```bash
-docker exec roach-weatherlink-ingest-to-kafka env | grep WEATHERLINK
+docker exec roach-weatherlink-kafka env | grep WEATHERLINK
 ```
 
 **Solutions**:
@@ -106,7 +106,7 @@ docker exec roach-weatherlink-ingest-to-kafka env | grep WEATHERLINK
 nano .env
 
 # Restart service
-./scripts/restart-all.sh weatherlink-ingest-to-kafka
+./scripts/restart-all.sh weatherlink-kafka
 ```
 
 ### No Data Publishing
@@ -115,7 +115,7 @@ nano .env
 
 **Check**:
 ```bash
-./scripts/logs.sh weatherlink-ingest-to-kafka
+./scripts/logs.sh weatherlink-kafka
 docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
 ```
 
@@ -131,8 +131,8 @@ docker exec roach-kafka kafka-topics --list --bootstrap-server localhost:29092
 curl -v "https://api.weatherlink.com/v2/current/[station-id]?api-key=[key]"
 
 # Check service connectivity
-docker exec roach-weatherlink-ingest-to-kafka nc -zv kafka 29092
-docker exec roach-weatherlink-ingest-to-kafka nc -zv postgres 5432
+docker exec roach-weatherlink-kafka nc -zv kafka 29092
+docker exec roach-weatherlink-kafka nc -zv postgres 5432
 ```
 
 ### No Data in PostgreSQL
@@ -141,7 +141,7 @@ docker exec roach-weatherlink-ingest-to-kafka nc -zv postgres 5432
 
 **Check**:
 ```bash
-./scripts/logs.sh weatherlink-materialize-to-sql
+./scripts/logs.sh weatherlink-sql
 ./scripts/db/query.sh stats
 ./scripts/db/query.sh orphans
 ```
@@ -160,7 +160,7 @@ docker exec roach-weatherlink-ingest-to-kafka nc -zv postgres 5432
 ./scripts/db/reload-orphans.sh
 
 # Restart materializer
-./scripts/restart-all.sh weatherlink-materialize-to-sql
+./scripts/restart-all.sh weatherlink-sql
 ```
 
 ## Kafka Issues
@@ -337,7 +337,7 @@ docker exec roach-postgres pg_isready -U roach
 docker restart roach-postgres
 
 # Check DSN in service
-docker exec roach-weatherlink-materialize-to-sql env | grep POSTGRES_DSN
+docker exec roach-weatherlink-sql env | grep POSTGRES_DSN
 ```
 
 ### Migration Failures
@@ -469,7 +469,7 @@ docker stats
 # Edit docker-compose.yml: FETCH_INTERVAL=10m
 
 # Restart service
-./scripts/restart-all.sh weatherlink-ingest-to-kafka
+./scripts/restart-all.sh weatherlink-kafka
 ```
 
 ### High Memory Usage
@@ -497,10 +497,10 @@ kafka:
 ```yaml
 # docker-compose.yml
 services:
-  weatherlink-ingest-to-kafka:
+  weatherlink-kafka:
     environment:
       - LOG_LEVEL=debug
-  weatherlink-materialize-to-sql:
+  weatherlink-sql:
     environment:
       - LOG_LEVEL=debug
 ```
@@ -509,7 +509,7 @@ services:
 
 ```bash
 # Enter container
-docker exec -it roach-weatherlink-ingest-to-kafka sh
+docker exec -it roach-weatherlink-kafka sh
 
 # Check environment
 env
