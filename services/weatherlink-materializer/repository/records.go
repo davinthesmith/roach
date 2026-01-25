@@ -19,39 +19,39 @@ func NewRecordRepository(db *sql.DB) *RecordRepository {
 }
 
 // InsertNumeric inserts a numeric record
-func (r *RecordRepository) InsertNumeric(ctx context.Context, tagID, deviceID int, value float64, timestamp int64) error {
+func (r *RecordRepository) InsertNumeric(ctx context.Context, tagID int, value float64, timestamp int64) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO records_numeric (tag_id, device_id, value, timestamp)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tag_id, timestamp) DO NOTHING
-	`, tagID, deviceID, value, timestamp)
+		INSERT INTO records_numeric (tag_id, value, ts)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (tag_id, ts) DO NOTHING
+	`, tagID, value, timestamp)
 	return err
 }
 
 // InsertText inserts a text record
-func (r *RecordRepository) InsertText(ctx context.Context, tagID, deviceID int, value string, timestamp int64) error {
+func (r *RecordRepository) InsertText(ctx context.Context, tagID int, value string, timestamp int64) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO records_text (tag_id, device_id, value, timestamp)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tag_id, timestamp) DO NOTHING
-	`, tagID, deviceID, value, timestamp)
+		INSERT INTO records_text (tag_id, value, ts)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (tag_id, ts) DO NOTHING
+	`, tagID, value, timestamp)
 	return err
 }
 
 // InsertNull inserts a null record
-func (r *RecordRepository) InsertNull(ctx context.Context, tagID, deviceID int, timestamp int64) error {
+func (r *RecordRepository) InsertNull(ctx context.Context, tagID int, timestamp int64) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO records_null (tag_id, device_id, timestamp)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (tag_id, timestamp) DO NOTHING
-	`, tagID, deviceID, timestamp)
+		INSERT INTO records_null (tag_id, ts)
+		VALUES ($1, $2)
+		ON CONFLICT (tag_id, ts) DO NOTHING
+	`, tagID, timestamp)
 	return err
 }
 
 // Insert inserts a record based on the tag's data type
-func (r *RecordRepository) Insert(ctx context.Context, tag *models.Tag, deviceID int, value interface{}, timestamp int64) error {
+func (r *RecordRepository) Insert(ctx context.Context, tag *models.Tag, value interface{}, timestamp int64) error {
 	if value == nil {
-		return r.InsertNull(ctx, tag.ID, deviceID, timestamp)
+		return r.InsertNull(ctx, tag.ID, timestamp)
 	}
 
 	switch tag.DataType {
@@ -69,14 +69,14 @@ func (r *RecordRepository) Insert(ctx context.Context, tag *models.Tag, deviceID
 		default:
 			return fmt.Errorf("unsupported numeric type for value: %T", value)
 		}
-		return r.InsertNumeric(ctx, tag.ID, deviceID, numValue, timestamp)
+		return r.InsertNumeric(ctx, tag.ID, numValue, timestamp)
 
 	case "text", "string":
 		strValue, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("expected string value, got %T", value)
 		}
-		return r.InsertText(ctx, tag.ID, deviceID, strValue, timestamp)
+		return r.InsertText(ctx, tag.ID, strValue, timestamp)
 
 	default:
 		return fmt.Errorf("unknown data type: %s", tag.DataType)

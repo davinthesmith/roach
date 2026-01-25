@@ -154,7 +154,7 @@ func (p *DataProcessor) ProcessMessage(ctx context.Context, msg kafka.Message) e
 		}
 
 		// Insert record into appropriate table
-		if err := p.recordRepo.Insert(ctx, tag, device.ID, fieldValue, timestamp); err != nil {
+		if err := p.recordRepo.Insert(ctx, tag, fieldValue, timestamp); err != nil {
 			log.Printf("Failed to insert record for tag %s: %v", fieldName, err)
 		}
 	}

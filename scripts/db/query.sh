@@ -108,22 +108,22 @@ case "$1" in
             echo "📈 Recent Records for LSID=$2 (last 20)"
             query -c "
             SELECT 
-                TO_TIMESTAMP(r.timestamp) as time,
+                TO_TIMESTAMP(r.ts) as time,
                 t.tag_name,
                 r.value,
                 r.value_type
             FROM records r
             JOIN tags t ON r.tag_id = t.id
-            JOIN devices d ON r.device_id = d.id
+            JOIN devices d ON t.device_id = d.id
             WHERE d.lsid = $2
-            ORDER BY r.timestamp DESC
+            ORDER BY r.ts DESC
             LIMIT 20;
             "
         else
             echo "📈 Recent Records (last 20)"
             query -c "
             SELECT 
-                TO_TIMESTAMP(r.timestamp) as time,
+                TO_TIMESTAMP(r.ts) as time,
                 d.lsid,
                 d.category,
                 t.tag_name,
@@ -131,8 +131,8 @@ case "$1" in
                 r.value_type
             FROM records r
             JOIN tags t ON r.tag_id = t.id
-            JOIN devices d ON r.device_id = d.id
-            ORDER BY r.timestamp DESC
+            JOIN devices d ON t.device_id = d.id
+            ORDER BY r.ts DESC
             LIMIT 20;
             "
         fi

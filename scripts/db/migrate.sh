@@ -191,7 +191,8 @@ cmd_up() {
     local applied_count=0
     local skipped_count=0
     
-    while IFS= read -r version; do
+    for version in $available; do
+        [ -z "$version" ] && continue
         if is_migration_applied "$version"; then
             log_info "Already applied: $version (skipping)"
             ((skipped_count++))
@@ -204,7 +205,7 @@ cmd_up() {
                 exit 1
             fi
         fi
-    done <<< "$available"
+    done
     
     echo ""
     log_success "Migrations complete: $applied_count applied, $skipped_count skipped"
@@ -250,14 +251,15 @@ cmd_status() {
         exit 0
     fi
     
-    while IFS= read -r version; do
+    for version in $available; do
+        [ -z "$version" ] && continue
         if is_migration_applied "$version"; then
             local applied_at=$(exec_sql "SELECT applied_at FROM schema_migrations WHERE version='$version';")
             echo -e "${GREEN}✓${NC} $version (applied: $applied_at)"
         else
             echo -e "${YELLOW}○${NC} $version (pending)"
         fi
-    done <<< "$available"
+    done
     
     echo ""
     

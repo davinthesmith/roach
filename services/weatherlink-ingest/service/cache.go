@@ -21,11 +21,11 @@ func (s *Service) rehydrateCache(ctx context.Context) error {
 	query := `
 		SELECT d.lsid, MAX(r.timestamp) as last_timestamp
 		FROM (
-			SELECT device_id, timestamp FROM records_numeric WHERE timestamp > $1
+			SELECT t.device_id, r.ts as timestamp FROM records_numeric r JOIN tags t ON r.tag_id = t.id WHERE r.ts > $1
 			UNION ALL
-			SELECT device_id, timestamp FROM records_text WHERE timestamp > $1
+			SELECT t.device_id, r.ts as timestamp FROM records_text r JOIN tags t ON r.tag_id = t.id WHERE r.ts > $1
 			UNION ALL
-			SELECT device_id, timestamp FROM records_null WHERE timestamp > $1
+			SELECT t.device_id, r.ts as timestamp FROM records_null r JOIN tags t ON r.tag_id = t.id WHERE r.ts > $1
 		) r
 		JOIN devices d ON d.id = r.device_id
 		GROUP BY d.lsid

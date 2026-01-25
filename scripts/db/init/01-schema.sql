@@ -4,6 +4,7 @@
 -- Note: This is the initial schema. See migrations/ directory for subsequent changes:
 --   - 001_enhance_tag_and_device_metadata: Added product_number, rain_collector_type, parent_device_*, sensor_catalog table
 --   - 002_optimize_device_schema: Added created_date, modified_date, renamed data_structure_type to rt_data_structure_type
+--   - 003_optimize_records_storage: Removed id, device_id, recorded_at; renamed timestamp to ts; optimized indexes
 
 -- Devices Table: Maps to sensors from WeatherLink
 CREATE TABLE devices (
@@ -48,75 +49,54 @@ CREATE INDEX idx_tags_name ON tags(tag_name);
 
 -- Numeric Records (integers, floats)
 CREATE TABLE records_numeric (
-    id BIGSERIAL PRIMARY KEY,
     tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    device_id INTEGER NOT NULL,
     value NUMERIC,
-    timestamp BIGINT NOT NULL,
-    recorded_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(tag_id, timestamp)
+    ts BIGINT NOT NULL,
+    PRIMARY KEY (tag_id, ts)
 );
 
-CREATE INDEX idx_records_numeric_tag_ts ON records_numeric(tag_id, timestamp DESC);
-CREATE INDEX idx_records_numeric_device_ts ON records_numeric(device_id, timestamp DESC);
-CREATE INDEX idx_records_numeric_timestamp ON records_numeric(timestamp DESC);
+CREATE INDEX idx_records_numeric_tag_ts ON records_numeric(tag_id, ts DESC);
 
 -- Text Records (strings)
 CREATE TABLE records_text (
-    id BIGSERIAL PRIMARY KEY,
     tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    device_id INTEGER NOT NULL,
     value TEXT,
-    timestamp BIGINT NOT NULL,
-    recorded_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(tag_id, timestamp)
+    ts BIGINT NOT NULL,
+    PRIMARY KEY (tag_id, ts)
 );
 
-CREATE INDEX idx_records_text_tag_ts ON records_text(tag_id, timestamp DESC);
-CREATE INDEX idx_records_text_device_ts ON records_text(device_id, timestamp DESC);
+CREATE INDEX idx_records_text_tag_ts ON records_text(tag_id, ts DESC);
 
 -- Null Records (track when fields are null)
 CREATE TABLE records_null (
-    id BIGSERIAL PRIMARY KEY,
     tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    device_id INTEGER NOT NULL,
-    timestamp BIGINT NOT NULL,
-    recorded_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(tag_id, timestamp)
+    ts BIGINT NOT NULL,
+    PRIMARY KEY (tag_id, ts)
 );
 
-CREATE INDEX idx_records_null_tag_ts ON records_null(tag_id, timestamp DESC);
+CREATE INDEX idx_records_null_tag_ts ON records_null(tag_id, ts DESC);
 
 -- Records View: Union of all record types
 CREATE VIEW records AS
 SELECT 
-    id,
     tag_id,
-    device_id,
     value::TEXT as value,
     'numeric' as value_type,
-    timestamp,
-    recorded_at
+    ts
 FROM records_numeric
 UNION ALL
 SELECT 
-    id,
     tag_id,
-    device_id,
     value,
     'text' as value_type,
-    timestamp,
-    recorded_at
+    ts
 FROM records_text
 UNION ALL
 SELECT 
-    id,
     tag_id,
-    device_id,
     NULL as value,
     'null' as value_type,
-    timestamp,
-    recorded_at
+    ts
 FROM records_null;
 
 -- Orphaned Messages Table: Tracks messages that couldn't be processed

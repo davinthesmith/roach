@@ -335,16 +335,23 @@ Format: `namespace.category[.subcategory]`
 - Purpose: Source of truth for tag enrichment
 
 **records_numeric** - Numeric time-series data
-- Fields: `tag_id`, `device_id`, `value` (numeric), `timestamp`
-- Index: `(tag_id, timestamp)`
+- Primary key: `(tag_id, ts)`
+- Fields: `tag_id`, `value` (numeric), `ts`
+- Index: `(tag_id, ts DESC)`
 
 **records_text** - Text time-series data
-- Fields: `tag_id`, `device_id`, `value` (text), `timestamp`
+- Primary key: `(tag_id, ts)`
+- Fields: `tag_id`, `value` (text), `ts`
+- Index: `(tag_id, ts DESC)`
 
 **records_null** - Null value tracking
-- Fields: `tag_id`, `device_id`, `timestamp`
+- Primary key: `(tag_id, ts)`
+- Fields: `tag_id`, `ts`
+- Index: `(tag_id, ts DESC)`
 
 **records** (view) - Unified query interface over all record types
+- Fields: `tag_id`, `value`, `value_type`, `ts`
+- Note: Device ID available via JOIN with tags table
 
 **orphaned_messages** - Messages that couldn't be processed
 - Fields: `topic`, `partition`, `offset`, `reason`, `headers`, `body`, `created_at`

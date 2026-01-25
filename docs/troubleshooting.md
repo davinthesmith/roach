@@ -394,6 +394,25 @@ postgres:
     - ./data/postgres:/var/lib/postgresql/data
 ```
 
+### Non-Interactive Database Queries
+
+**Symptom**: `./scripts/db/query.sh` fails with "the input device is not a TTY"
+
+**Cause**: Script uses `docker exec -it` (requires interactive terminal)
+
+**Solution**: Use `-c` flag without `-it`:
+```bash
+docker exec roach-postgres psql -U roach -d roach -c "SELECT COUNT(*) FROM devices;"
+docker exec roach-postgres psql -U roach -d roach -c "SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM tags;"
+```
+
+**Capture output** (add `-t -A` flags):
+```bash
+COUNT=$(docker exec roach-postgres psql -U roach -d roach -t -A -c "SELECT COUNT(*) FROM devices;")
+```
+
+**Flags**: `-t` (no headers), `-A` (unaligned), `-c` (execute and exit), no `-it` (non-interactive)
+
 ## Network Issues
 
 ### Services Can't Communicate

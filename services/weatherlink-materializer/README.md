@@ -40,13 +40,15 @@ BATCH_SIZE=100                     # Batch processing size
 ### Tables
 - **devices**: Sensor metadata (LSID, category, location)
 - **tags**: Field definitions (temperature, humidity, etc.)
-- **records_numeric**: Numeric values (floats, integers)
-- **records_text**: Text values (strings)
-- **records_null**: Null value tracking
+- **records_numeric**: Numeric values - optimized with composite primary key (tag_id, ts)
+- **records_text**: Text values - optimized with composite primary key (tag_id, ts)
+- **records_null**: Null value tracking - optimized with composite primary key (tag_id, ts)
 - **orphaned_messages**: Messages that couldn't be processed
 
+**Note**: Records tables use `ts` (timestamp) instead of `timestamp` to avoid SQL reserved keywords. Device ID is accessible via JOIN with tags table.
+
 ### Views
-- **records**: Union view of all record types
+- **records**: Union view of all record types (fields: tag_id, value, value_type, ts)
 
 ## Running
 
@@ -161,9 +163,9 @@ GROUP BY reason;
 SELECT r.*, t.tag_name, d.category 
 FROM records r
 JOIN tags t ON r.tag_id = t.id
-JOIN devices d ON r.device_id = d.id
+JOIN devices d ON t.device_id = d.id
 WHERE d.lsid = 918290 
-ORDER BY r.timestamp DESC 
+ORDER BY r.ts DESC 
 LIMIT 100;
 ```
 

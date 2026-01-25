@@ -45,8 +45,8 @@ KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 - `devices` - 20+ columns including parent device, location, metadata JSONB
 - `tags` - Unique on (device_id, tag_name), includes unit/description
 - `sensor_catalog` - Field metadata indexed by (sensor_type, data_structure_type, field_name)
-- `records_numeric`, `records_text`, `records_null` - Typed time-series storage
-- `records` (view) - Unified interface
+- `records_numeric`, `records_text`, `records_null` - Optimized time-series storage with composite primary keys (tag_id, ts)
+- `records` (view) - Unified interface, JOIN with tags for device_id
 - `orphaned_messages` - Failed processing tracking
 - `schema_migrations` - Migration version tracking
 
@@ -56,8 +56,9 @@ KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 - `idx_devices_data_structure_type` on `devices(data_structure_type)`
 - `idx_tags_device_tag` on `tags(device_id, tag_name)` (unique)
 - `idx_sensor_catalog_lookup` on `sensor_catalog(sensor_type, data_structure_type, field_name)` (unique)
-- `idx_records_numeric_tag_timestamp` on `records_numeric(tag_id, timestamp)`
-- `idx_records_text_tag_timestamp` on `records_text(tag_id, timestamp)`
+- `idx_records_numeric_tag_ts` on `records_numeric(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
+- `idx_records_text_tag_ts` on `records_text(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
+- `idx_records_null_tag_ts` on `records_null(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
 
 ### Zookeeper
 
@@ -95,7 +96,7 @@ main goroutine
 
 **Deduplication Strategy**:
 1. In-memory timestamp cache (last 5 minutes)
-2. PostgreSQL rehydration on startup (last 24 hours)
+2. PostgreSQL rehydration on startup (last 24 hours) - queries records tables via JOIN with tags
 3. Cache stores: `map[int64]map[int]time.Time` (LSID → data_structure_type → timestamp)
 
 **API Authentication**: HMAC-SHA256 signature generation per WeatherLink v2 spec
@@ -350,7 +351,8 @@ Use migration framework:
 
 - Default settings suitable for low-volume IoT data
 - For higher volume: Tune `shared_buffers`, `work_mem`, `maintenance_work_mem`
-- Consider partitioning `records_*` tables by timestamp for large datasets
+- Consider partitioning `records_*` tables by `ts` (timestamp) for large datasets
+- Optimized schema (migration 003): Composite primary keys, reduced columns, ~45% storage reduction
 
 ### Services
 
