@@ -6,8 +6,16 @@
 Start infrastructure and all services
 
 ```bash
+# Start normally
 ./scripts/start-all.sh
+
+# Start with rebuild (rebuild all containers first)
+./scripts/start-all.sh build
 ```
+
+**Options:**
+- No arguments: Start services with existing images
+- `build`: Rebuild all containers before starting (useful after code changes)
 
 ### start-infra.sh
 Start only infrastructure (Kafka, Zookeeper, Kafka UI)

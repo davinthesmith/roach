@@ -1,4 +1,4 @@
-module github.com/davin/roach/services/weather-sql
+module weather-sql
 
 go 1.21
 

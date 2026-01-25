@@ -142,6 +142,38 @@ rm -rf data/kafka  # WARNING: Deletes all data
 ./scripts/start-infra.sh
 ```
 
+### Kafka-Zookeeper Cluster ID Mismatch
+
+**Symptom**: Kafka crashes on restart with `InconsistentClusterIdException: The Cluster ID X doesn't match stored clusterId Some(Y)`
+
+**Cause**: Kafka's data directory is not properly persisted, causing cluster ID to regenerate while Zookeeper retains the old one.
+
+**Check**:
+```bash
+# View Kafka logs for cluster ID errors
+docker logs roach-kafka 2>&1 | grep -i "InconsistentClusterIdException"
+
+# Check if meta.properties exists
+find ./data/kafka -name "meta.properties"
+```
+
+**Solution**:
+```bash
+# Stop services
+./scripts/stop-all.sh
+
+# Remove mismatched data
+rm -rf data/kafka/* data/zookeeper/*
+
+# Verify KAFKA_LOG_DIRS is set in docker-compose.infrastructure.yml
+# Must be: KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+# Restart
+./scripts/start-all.sh
+```
+
+**Prevention**: The docker-compose configuration now includes `KAFKA_LOG_DIRS` environment variable to ensure Kafka stores its logs in the mounted volume directory.
+
 ### Topics Not Auto-Created
 
 **Symptom**: Topics don't appear when service publishes
@@ -338,6 +370,59 @@ kafka:
 ```
 
 ## Data Issues
+
+### Empty Tag Units and Descriptions
+
+**Symptom**: Tags in PostgreSQL have NULL values for `unit` and `description` fields
+
+**Cause**: Sensor catalog message exceeded Kafka's 1MB message limit (full catalog is 3.4MB), causing truncation of the `data_structures` array that contains field metadata
+
+**Check**:
+```bash
+# Check if tags have units
+docker exec -it roach-postgres psql -U postgres -d weather -c \
+  "SELECT tag_name, unit, description FROM tags WHERE unit IS NOT NULL LIMIT 5;"
+
+# Check catalog topic size
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.metadata.catalog \
+  --from-beginning --max-messages 1 2>/dev/null | wc -c
+
+# Verify data_structures field exists
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.metadata.catalog \
+  --from-beginning --max-messages 1 2>/dev/null | \
+  jq '.sensor_types[0] | has("data_structures")'
+```
+
+**Solution**: This issue was fixed by implementing catalog filtering. The weather service now:
+1. Dynamically discovers sensor types from the `/v2/sensors` API
+2. Filters the catalog to only include those sensor types before publishing
+3. Reduces catalog size from 3.4MB to ~50-100KB while preserving all `data_structures`
+
+If you're experiencing this issue, ensure you're running the latest version with catalog filtering enabled.
+
+**Verification after fix**:
+```bash
+# Filtered catalog should be ~50-100KB
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.metadata.catalog \
+  --from-beginning --max-messages 1 2>/dev/null | wc -c
+
+# Should show your actual sensor types only (e.g., 4 types)
+docker exec roach-kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather.metadata.catalog \
+  --from-beginning --max-messages 1 2>/dev/null | \
+  jq '.sensor_types[].sensor_type'
+
+# Tags should now have units
+docker exec -it roach-postgres psql -U postgres -d weather -c \
+  "SELECT COUNT(*) FROM tags WHERE unit IS NOT NULL;"
+```
 
 ### Data Not Persisting
 

@@ -1,4 +1,4 @@
-module github.com/davin/roach/services/weather
+module weather
 
 go 1.21
 

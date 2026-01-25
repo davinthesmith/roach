@@ -39,6 +39,12 @@ ROACH is a Kafka-based data aggregation system for home IoT devices with infinit
 - **Health Check**: `pg_isready -U roach`
 - **Network**: `roach-network`
 - **Database**: roach (user: roach)
+- **Schema**:
+  - `devices` - Sensor registry with full metadata
+  - `tags` - Field definitions with units/descriptions
+  - `sensor_catalog` - Field metadata from API catalog
+  - `records_*` - Time-series data tables
+  - `schema_migrations` - Migration tracking
 
 ### Application Layer
 **File**: `docker-compose.yml`
@@ -55,9 +61,13 @@ ROACH is a Kafka-based data aggregation system for home IoT devices with infinit
 - **Language**: Go
 - **Build**: Multi-stage Dockerfile
 - **Purpose**: Materialize Kafka messages to PostgreSQL
-- **Consumers**: All `weather.*` data topics + metadata
+- **Consumers**: All `weather.*` data topics + metadata + catalog
 - **Schema**: Device/Tag/Record hierarchy
-- **Features**: Auto-tag creation, orphaned message tracking
+- **Features**: 
+  - Auto-tag creation with metadata enrichment
+  - Sensor catalog consumption and caching
+  - Orphaned message tracking
+  - Units and descriptions from API catalog
 
 ## Data Flow
 
@@ -134,7 +144,12 @@ roach/
 │   └── db/
 │       ├── init/
 │       │   └── 01-schema.sql         # Database schema
-│       └── reload-orphans.sh          # Reprocess orphaned messages
+│       ├── migrations/               # Schema migrations
+│       │   ├── 001_*.up.sql
+│       │   └── 001_*.down.sql
+│       ├── migrate.sh                # Migration tool
+│       ├── query.sh                  # Database queries
+│       └── reload-orphans.sh         # Reprocess orphaned messages
 ├── docs/                             # Documentation
 ├── data/                             # Persistent data
 │   ├── kafka/
@@ -152,6 +167,97 @@ roach/
         ├── Dockerfile
         └── README.md
 ```
+
+## Code Organization
+
+Both services follow clean architecture principles with clear separation of concerns.
+
+> **See [go-standards.md](go-standards.md) for complete Go code organization standards, design principles, and implementation examples.**
+
+### weather-sql Service Structure
+
+```
+weather-sql/
+├── main.go              # Entry point, dependency wiring (~75 lines)
+├── config/              # Configuration loading
+│   └── config.go        # Environment variable parsing
+├── models/              # Data structures
+│   └── types.go         # Device, Tag, FieldMetadata structs
+├── cache/               # In-memory caching
+│   └── cache.go         # Thread-safe cache for devices, tags, catalog
+├── repository/          # Database operations
+│   ├── devices.go       # Device CRUD operations
+│   ├── tags.go          # Tag CRUD and enrichment queries
+│   ├── catalog.go       # Catalog storage and retrieval
+│   ├── records.go       # Record insertion (numeric, text, null)
+│   └── orphans.go       # Orphaned message tracking
+├── service/             # Business logic
+│   ├── materializer.go  # Service orchestration
+│   ├── metadata.go      # Metadata processor (devices)
+│   ├── catalog.go       # Catalog processor
+│   ├── data.go          # Data processor (tags and records)
+│   └── enrichment.go    # Tag enrichment with catalog
+└── kafka/               # Kafka consumers
+    └── consumer.go      # Reader creation utilities
+```
+
+**Package Dependencies**:
+- `main` → `config`, `kafka`, `service`
+- `service` → `repository`, `cache`, `models`
+- `repository` → `models`
+- `cache` → `models`
+
+### weather Service Structure
+
+```
+weather/
+├── main.go              # Entry point, dependency wiring (~85 lines)
+├── config/              # Configuration loading
+│   └── config.go        # Environment variable parsing
+├── models/              # Data structures
+│   └── types.go         # API response structs
+├── api/                 # WeatherLink API client
+│   ├── client.go        # HTTP client wrapper
+│   ├── auth.go          # HMAC-SHA256 signature generation
+│   └── weatherlink.go   # API endpoint methods
+├── kafka/               # Kafka producer
+│   └── producer.go      # Message publishing
+├── service/             # Business logic
+│   ├── service.go       # Service orchestration
+│   ├── metadata.go      # Metadata fetching (sensors, catalog, station)
+│   ├── conditions.go    # Current conditions fetching
+│   └── cache.go         # Timestamp cache and rehydration
+└── internal/            # Internal utilities
+    └── hash.go          # SHA-256 hash calculation
+```
+
+**Package Dependencies**:
+- `main` → `config`, `api`, `kafka`, `service`
+- `service` → `api`, `kafka`, `internal`, `models`
+- `api` → `models`
+- `kafka` → none (generic)
+
+### Design Principles
+
+#### Dependency Injection
+- Services receive dependencies via constructors
+- No package-level global state
+- Enables easy mocking for tests
+
+#### Interface Usage
+- Repository operations can be behind interfaces (future enhancement)
+- API client operations can be behind interfaces (future enhancement)
+- Kafka operations encapsulated in dedicated packages
+
+#### Error Handling
+- Errors propagated up to service layer
+- Service layer decides logging strategy
+- Repository layer returns descriptive errors
+
+#### Context Propagation
+- All long-running operations accept `context.Context`
+- Enables cancellation and timeout
+- Proper cleanup on shutdown
 
 ## Extension Points
 
@@ -182,6 +288,55 @@ services:
   - `weather.iss` (outdoor weather)
   - `home.hvac.temperature`
   - `home.security.motion`
+
+## Database Schema
+
+### Migration Framework
+
+ROACH uses a lightweight migration system:
+- **Location**: `scripts/db/migrations/`
+- **Tracking**: `schema_migrations` table stores applied migrations
+- **Commands**: `./scripts/db/migrate.sh` with `up`, `down`, `status`, `create`
+- **Format**: `NNN_description.{up,down}.sql`
+
+Migrations are applied in order and tracked with checksums for integrity.
+
+### Schema Tables
+
+**devices** - Sensor registry
+- Core: `id`, `lsid`, `sensor_type`, `category`, `manufacturer`, `product_name`
+- Extended: `product_number`, `rain_collector_type`, `active`, `tx_id`, `port_number`
+- Parent device: `parent_device_type`, `parent_device_name`, `parent_device_id`
+- Location: `station_id`, `station_name`, `latitude`, `longitude`, `elevation`
+- Metadata: `metadata` (JSONB), `data_structure_type`
+
+**tags** - Field definitions
+- Core: `id`, `device_id`, `tag_name`, `data_type`
+- Metadata: `unit`, `description`, `metadata` (JSONB)
+- Unique: `(device_id, tag_name)`
+
+**sensor_catalog** - Field metadata from WeatherLink API
+- `sensor_type`, `data_structure_type`, `field_name`
+- `field_type`, `units`, `description`
+- Unique: `(sensor_type, data_structure_type, field_name)`
+
+**records_numeric** - Numeric time-series data
+- `tag_id`, `device_id`, `value`, `timestamp`
+
+**records_text** - Text time-series data
+- `tag_id`, `device_id`, `value`, `timestamp`
+
+**records_null** - Null value tracking
+- `tag_id`, `device_id`, `timestamp`
+
+**records** (view) - Unified query interface over all record types
+
+**orphaned_messages** - Messages that couldn't be processed
+- Tracks topic, partition, offset, reason
+- Can be reprocessed after fixing issues
+
+**schema_migrations** - Migration tracking
+- `version`, `name`, `applied_at`, `checksum`
 
 ## Resource Usage
 

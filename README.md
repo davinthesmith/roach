@@ -16,6 +16,9 @@ vim .env  # Add your WeatherLink credentials
 # Start
 ./scripts/start-all.sh
 
+# Or start with rebuild (after code changes)
+./scripts/start-all.sh build
+
 # Monitor
 ./scripts/status.sh
 ```
@@ -26,6 +29,8 @@ Access Kafka UI: http://localhost:8080
 
 - Infinite data retention in Kafka
 - PostgreSQL materialization with Device/Tag/Record hierarchy
+- Rich metadata capture with units and descriptions from API
+- Database migration framework with version tracking
 - Timestamp-based deduplication
 - Auto-restart on system boot
 - Web-based monitoring UI
@@ -40,6 +45,7 @@ Access Kafka UI: http://localhost:8080
 - **[Architecture](docs/architecture.md)** - System design, components, data flow
 - **[Configuration](docs/configuration.md)** - Environment variables, settings
 - **[Operations](docs/operations.md)** - Start, stop, monitor, maintain
+- **[Go Standards](docs/go-standards.md)** - Go code organization and best practices
 
 ### Reference
 - **[Kafka Topics](docs/kafka-topics.md)** - Topic schemas and message formats
@@ -93,6 +99,9 @@ See [Configuration](docs/configuration.md) for all options.
 # Start everything
 ./scripts/start-all.sh
 
+# Start with rebuild (after code changes)
+./scripts/start-all.sh build
+
 # View status
 ./scripts/status.sh
 
@@ -102,6 +111,11 @@ See [Configuration](docs/configuration.md) for all options.
 
 # Query database
 ./scripts/db/query.sh stats
+
+# Database migrations
+./scripts/db/migrate.sh status  # Show migration status
+./scripts/db/migrate.sh up      # Apply pending migrations
+./scripts/db/migrate.sh down    # Rollback last migration
 
 # Restart service
 ./scripts/restart.sh weather
@@ -122,10 +136,12 @@ Current Kafka topics:
 - `weather.metadata.*` - Sensor metadata
 
 PostgreSQL tables:
-- `devices` - Sensor registry
-- `tags` - Field definitions
+- `devices` - Sensor registry with full device metadata
+- `tags` - Field definitions with units and descriptions
+- `sensor_catalog` - Field metadata from WeatherLink API
 - `records_numeric`, `records_text`, `records_null` - Time-series data
 - `records` view - Unified query interface
+- `schema_migrations` - Migration tracking
 
 See [Kafka Topics](docs/kafka-topics.md) for schemas and message formats.
 

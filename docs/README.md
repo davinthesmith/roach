@@ -3,6 +3,18 @@
 ## Purpose
 This documentation is optimized for AI agent consumption to understand and work with the ROACH project.
 
+## Documentation Guidelines for AI Agents
+
+**IMPORTANT**: When working with this project:
+1. **DO NOT generate additional .md files in the project root directory**
+   - New documentation belongs in `docs/` directory
+   - Updates to existing content go in README.md, docs/README.md, or specific doc files
+   
+2. **NO historical information outside of CHANGELOG.md**
+   - All changes, fixes, and updates belong in CHANGELOG.md
+   - Do not create summary files, fix logs, or historical documentation elsewhere
+   - Documentation files should reflect current state only, not history
+
 ## Structure
 
 ### Start Here
@@ -12,10 +24,12 @@ This documentation is optimized for AI agent consumption to understand and work 
 - **[architecture.md](architecture.md)** - System architecture, data flow, components
 - **[configuration.md](configuration.md)** - Environment variables, settings, customization
 - **[operations.md](operations.md)** - Running, monitoring, maintaining the system
+- **[go-standards.md](go-standards.md)** - Go code organization standards and best practices
 
 ### Reference
 - **[kafka-topics.md](kafka-topics.md)** - Topic naming, schemas, message structures
 - **[api-reference.md](api-reference.md)** - Command reference, API endpoints
+- **[migrations.md](migrations.md)** - Database migration framework
 - **[troubleshooting.md](troubleshooting.md)** - Common issues and solutions
 
 ### Services
@@ -23,6 +37,7 @@ This documentation is optimized for AI agent consumption to understand and work 
 
 ### Database
 - **PostgreSQL** - Time-series data storage with Device/Tag/Record hierarchy
+- **[Migrations](migrations.md)** - Schema migration framework with version tracking
 
 ## How to Use This Documentation
 
@@ -45,6 +60,7 @@ For complete context, read in order:
 
 ### For Development
 - **Service structure**: See `architecture.md` → Services
+- **Go code standards**: See `go-standards.md`
 - **Kafka integration**: See `kafka-topics.md`
 - **API reference**: See `api-reference.md`
 

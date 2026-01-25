@@ -8,17 +8,19 @@
 
 ## Immediate Commands
 ```bash
-./scripts/start-all.sh    # Start system
-./scripts/status.sh       # Check health
-./scripts/logs.sh weather # View logs
-./scripts/stop-all.sh     # Stop system
+./scripts/start-all.sh          # Start system
+./scripts/start-all.sh build    # Start with rebuild
+./scripts/status.sh             # Check health
+./scripts/logs.sh weather       # View logs
+./scripts/stop-all.sh           # Stop system
 ```
 
 ## Key Locations
 - Docs: `docs/README.md` (start here for full context)
+- Go Standards: `docs/go-standards.md` (code organization)
 - Config: `.env` (credentials), `docker-compose.*.yml` (services)
 - Data: `./data/kafka`, `./data/zookeeper`
-- Services: `services/weather/main.go`
+- Services: `services/weather/`, `services/weather-sql/`
 
 ## Network
 - Kafka internal: `kafka:29092`
@@ -32,6 +34,10 @@
 
 ## Common Tasks
 ```bash
+# Start/rebuild
+./scripts/start-all.sh          # Normal start
+./scripts/start-all.sh build    # Rebuild containers first
+
 # Add service
 # 1. Create services/<name>/
 # 2. Add to docker-compose.yml with kafka:29092
@@ -67,7 +73,17 @@ roach/
 ├── .env                              # Credentials
 ├── scripts/*.sh                      # Operations
 ├── docs/*.md                         # Documentation
-├── services/weather/                 # Weather service
+│   ├── README.md                     # Doc index
+│   ├── go-standards.md               # Go code standards
+│   └── ...
+├── services/weather/                 # Weather publisher
+│   ├── main.go                       # Entry point
+│   ├── config/, models/, api/        # Packages
+│   └── service/, kafka/, internal/
+├── services/weather-sql/             # Weather materializer
+│   ├── main.go                       # Entry point
+│   ├── config/, models/, cache/      # Packages
+│   └── repository/, service/, kafka/
 └── data/                             # Persistent storage
 ```
 

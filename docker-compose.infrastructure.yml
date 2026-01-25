@@ -46,6 +46,9 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       
+      # Persistent log directory
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      
       # Infinite Retention Configuration
       KAFKA_LOG_RETENTION_MS: -1
       KAFKA_LOG_RETENTION_BYTES: -1

@@ -4,8 +4,14 @@
 
 ### Start Everything
 ```bash
+# Normal start
 ./scripts/start-all.sh
+
+# Start with rebuild (after code changes)
+./scripts/start-all.sh build
 ```
+
+The `build` option rebuilds all containers before starting them. Use this after modifying service code.
 
 ### Start Infrastructure Only
 ```bash
@@ -94,9 +100,12 @@ Features:
 
 ### Restart After Code Changes
 ```bash
-# Rebuild and restart
+# Option 1: Rebuild specific service
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d --build weather-publish
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d --build weather-sql
+
+# Option 2: Rebuild and restart all services
+./scripts/start-all.sh build
 ```
 
 ## Database Operations
@@ -141,6 +150,55 @@ tar -czf postgres-backup-$(date +%Y%m%d).tar.gz data/postgres/
 # From SQL dump
 cat backup.sql | docker exec -i roach-postgres psql -U roach -d roach
 ```
+
+## Database Migrations
+
+ROACH includes a migration framework for managing database schema changes.
+
+### View Migration Status
+```bash
+./scripts/db/migrate.sh status
+```
+
+Shows all migrations with their status (applied or pending).
+
+### Apply Migrations
+```bash
+# Apply all pending migrations
+./scripts/db/migrate.sh up
+```
+
+Migrations are applied in order. Each migration is tracked in the `schema_migrations` table.
+
+### Rollback Migration
+```bash
+# Rollback the last applied migration
+./scripts/db/migrate.sh down
+```
+
+This will prompt for confirmation before rolling back.
+
+### Create New Migration
+```bash
+# Create new migration files
+./scripts/db/migrate.sh create add_new_column
+
+# This creates:
+# - scripts/db/migrations/NNN_add_new_column.up.sql
+# - scripts/db/migrations/NNN_add_new_column.down.sql
+```
+
+Edit the generated files to add your SQL changes:
+- `.up.sql` - Forward migration (adding changes)
+- `.down.sql` - Rollback migration (reverting changes)
+
+### Migration Best Practices
+
+1. **Always create both up and down migrations** for reversibility
+2. **Test rollback** before applying in production
+3. **Use IF EXISTS/IF NOT EXISTS** for idempotent migrations
+4. **Backup data** before running migrations on production
+5. **Review migration status** after applying
 
 ### Reprocess Orphaned Messages
 ```bash
@@ -235,9 +293,12 @@ tar -xzf kafka-backup-YYYYMMDD.tar.gz
 # 1. Edit code
 nano services/weather/main.go
 
-# 2. Rebuild and restart
+# 2. Option A: Rebuild specific service
 docker compose build weather-publish
 docker compose -f docker-compose.infrastructure.yml -f docker-compose.yml up -d weather-publish
+
+# 2. Option B: Rebuild all services
+./scripts/start-all.sh build
 
 # 3. Check logs
 ./scripts/logs.sh weather-publish

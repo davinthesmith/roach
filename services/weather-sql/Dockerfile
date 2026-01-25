@@ -3,12 +3,12 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod files and source
-COPY go.mod ./
-COPY . .
+# Copy go mod files first for better caching
+COPY go.mod go.sum* ./
+RUN go mod download
 
-# Generate go.sum and download dependencies
-RUN go mod tidy && go mod download
+# Copy all source code
+COPY . .
 
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o weather-sql .
