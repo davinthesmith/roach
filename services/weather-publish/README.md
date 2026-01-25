@@ -95,15 +95,38 @@ go run main.go
 
 ```
 services/weather-publish/
-├── main.go              # Main service code
-├── go.mod              # Go module definition
-├── go.sum              # Dependency checksums
-├── Dockerfile          # Container build instructions
-├── .env.example        # Environment template
-├── README.md           # This file
-└── postman/            # API reference documentation
-    ├── WeatherLink v2 API.postman_collection.json
-    └── WeatherLink v2 API.postman_environment.json
+├── main.go              # Entry point
+├── go.mod               # Go module definition
+├── go.sum               # Dependency checksums
+├── Dockerfile           # Container build instructions
+├── .env.example         # Environment template
+├── README.md            # This file
+├── api/                 # WeatherLink API client
+│   ├── auth.go          # API authentication
+│   ├── client.go        # HTTP client implementation
+│   ├── weatherlink.go   # WeatherLink API wrapper
+│   ├── postman/         # API reference documentation
+│   │   ├── WeatherLink v2 API.postman_collection.json
+│   │   └── WeatherLink v2 API.postman_environment_sample.json
+│   └── snapshots/       # Sample API response snapshots
+│       └── api.weatherlink.com/
+│           ├── GET current.json
+│           ├── GET historic.json
+│           ├── GET sensor-catalog.json
+│           └── GET sensors.json
+├── config/              # Configuration management
+│   └── config.go
+├── internal/            # Internal utilities
+│   └── hash.go          # Hashing functions for change detection
+├── kafka/               # Kafka client
+│   └── producer.go      # Message producer
+├── models/              # Data models
+│   └── types.go
+└── service/             # Core service logic
+    ├── cache.go         # Deduplication cache
+    ├── conditions.go    # Current conditions fetching
+    ├── metadata.go      # Metadata management
+    └── service.go       # Main service implementation
 ```
 
 ### Dependencies
@@ -210,12 +233,14 @@ product_name: Vantage Pro2, Wireless
 
 ## API Reference
 
-The WeatherLink v2 API Postman collection is included in the `postman/` directory:
+The WeatherLink v2 API Postman collection is included in the `api/postman/` directory:
 
-- **Collection**: `WeatherLink v2 API.postman_collection.json`
-- **Environment**: `WeatherLink v2 API.postman_environment.json`
+- **Collection**: `api/postman/WeatherLink v2 API.postman_collection.json`
+- **Environment**: `api/postman/WeatherLink v2 API.postman_environment_sample.json` (copy and rename to remove `_sample` suffix, then add your credentials)
 
 Import these into Postman to explore available endpoints.
+
+Sample API response snapshots are available in `api/snapshots/api.weatherlink.com/` for reference when developing or debugging.
 
 ### Key Endpoints Used
 
