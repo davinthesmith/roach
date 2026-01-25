@@ -45,7 +45,10 @@ func main() {
 	apiClient := api.NewClient(cfg.WeatherLinkAPIKey, cfg.WeatherLinkAPISecret, cfg.WeatherLinkStationID)
 
 	// Create Kafka producer
-	producer := kafka.NewProducer(cfg.KafkaBroker)
+	producer, err := kafka.NewProducer(cfg.KafkaBroker)
+	if err != nil {
+		log.Fatalf("Failed to create Kafka producer: %v", err)
+	}
 	defer producer.Close()
 
 	// Connect to PostgreSQL (optional)

@@ -79,9 +79,13 @@ Published: On change or first run
 ##### weather.metadata.catalog
 **Sensor Type Catalog**
 
-Contains: Data structure definitions, field schemas for all sensor types
+Contains: Data structure definitions, field schemas for sensor types
 
 Published: On change or first run
+
+**Message Structure**: As of January 2026, catalog is published as multiple messages (one per sensor type) instead of a single large message. This avoids Kafka size limits and allows incremental processing.
+
+Message key format: `sensor_type:{sensor_type_id}`
 
 ##### weather.metadata.station
 **Station Information**
@@ -96,15 +100,21 @@ Published: On change or first run
 All messages are JSON with Kafka headers
 
 ### Headers
-Every message includes:
-- `lsid` - Logical Sensor ID
-- `timestamp` - Unix timestamp (seconds)
-- `station_id` - Station ID (integer)
-- `station_id_uuid` - Station UUID
+
+**Current (Optimized - January 2026)**:
+- `schema_version` - Schema version (string, e.g., "1")
+- `lsid` - Logical Sensor ID (integer)
+- `timestamp` - Unix timestamp in seconds (integer)
 - `sensor_type` - Sensor type code (integer)
 - `data_structure_type` - Data structure type (integer)
-- `category` - Sensor category (string)
-- `product_name` - Product name (string)
+
+**Removed Headers** (available via metadata lookup):
+- ~~`station_id`~~ - Use metadata lookup via LSID
+- ~~`station_id_uuid`~~ - Use metadata lookup via LSID
+- ~~`category`~~ - Derive from sensor_type
+- ~~`product_name`~~ - Use metadata lookup via LSID
+
+See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
 
 ### Body Example (weather.iss)
 ```json

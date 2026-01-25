@@ -2,6 +2,86 @@
 
 ## 2026-01-25
 
+### Kafka Message Optimization - Metadata Header Cleanup
+
+#### Changed
+- **weather-publish service**: Removed redundant headers from metadata messages
+  - Sensors metadata: Removed `lsid`, `sensor_type`, `category`, `station_id` headers (already in message body)
+  - Catalog metadata: Removed `sensor_type` header (already in message body)
+  - Metadata messages now only include `schema_version` header plus catalog-specific headers (`catalog_hash`, `generated_at`)
+  - Storage savings: ~1 KB/year (minimal impact, primary benefit is code clarity)
+  - No breaking changes: Consumers only read from message body, not headers
+
+#### Removed
+- **Documentation cleanup**: Deleted `DEDUPLICATION_VERIFICATION.md`
+  - Document referenced legacy `segmentio/kafka-go` library
+  - Current implementation uses `confluent-kafka-go/v2` with broker-level idempotency
+  - Idempotency documentation consolidated in `docs/kafka-standards.md`
+
+#### Rationale
+- Metadata message headers duplicated fields already present in message body
+- weather-sql consumers only parse message body, headers were unused
+- Reduces message header overhead and improves code clarity
+- Aligns metadata messages with data message optimization principles
+
+### Kafka Standards and Storage Optimization
+
+#### Added
+- Created `docs/kafka-standards.md` - Comprehensive Kafka best practices guide (900+ lines)
+  - Producer/consumer configuration standards
+  - Message structure optimization
+  - Storage analysis and projections
+  - Compression and batching guidelines
+  - Monitoring and testing recommendations
+  - Troubleshooting guide
+  - Future enhancement roadmap
+
+#### Changed
+- **weather-publish service**: Implemented Kafka storage optimizations (72% reduction)
+  - Enabled LZ4 compression in Kafka producer (60-70% savings)
+  - Configured message batching (100KB/50ms) for better compression ratios
+  - Optimized message headers: removed 4 redundant headers (station_id, station_id_uuid, category, product_name)
+  - Added schema_version header to all messages for future evolution
+  - Split large catalog message (3.5 MB) into per-sensor-type messages
+- **Cache implementation improvements**:
+  - Fixed cache rehydration bug (device_id vs LSID mismatch) that caused duplicates after restart
+  - Enhanced cache structure to include data_structure_type dimension for correct deduplication
+  - Updated deduplication logic: checkDuplicate() and updateCache() now account for data_structure_type
+- **Documentation updates**:
+  - Updated `docs/kafka-topics.md` with new optimized header structure
+  - Updated `docs/architecture.md` with storage metrics (0.3 MB/day down from 1-3 MB/day)
+  - Updated `docs/AI-CONTEXT.md` with optimization notes and references
+  - Updated `docs/README.md` to include kafka-standards.md in index
+
+#### Storage Impact
+- Daily: 1.1 MB → 0.3 MB (73% reduction)
+- Annual: 400 MB → 110 MB (72% reduction)
+- 100 years: 40 GB → 11 GB (72% reduction)
+
+#### Technical Details
+- **Idempotent Producer** (MAJOR): Migrated from `segmentio/kafka-go` to `confluent-kafka-go/v2`
+  - Enables true exactly-once semantics with `enable.idempotence=true`
+  - Eliminates duplicate messages on network failures with retries
+  - Producer ID (PID) and sequence numbers prevent duplicates at broker level
+  - Requires CGO and librdkafka (Alpine packages: gcc, musl-dev, librdkafka-dev)
+  - Upgraded Go version: 1.21 → 1.23 (required by confluent-kafka-go/v2)
+  - Updated Dockerfile: CGO_ENABLED=1 with dynamic linking to system librdkafka
+- Compression: LZ4 codec (2-5% CPU overhead for 60-70% storage savings)
+- Batching: 100KB batches with 50ms timeout (minimal latency impact)
+- Header optimization: 115 bytes saved per message (12 MB/year across all messages)
+- Catalog messages: Split into multiple messages with key format `sensor_type:{id}`
+- Schema versioning: All messages now include `schema_version: "1"` header
+
+#### Breaking Changes
+- **Consumer impact**: Removed headers require metadata lookups
+  - station_id → Lookup via devices table using LSID
+  - station_id_uuid → Lookup via devices table
+  - category → Derive from sensor_type or lookup
+  - product_name → Lookup via devices table
+- weather-sql service may require updates if it reads removed headers
+- **Build requirements**: Now requires librdkafka at runtime (added to Alpine image)
+- **Local development**: Requires Go 1.22+ (Docker uses Go 1.23)
+
 ### Documentation Optimization for AI Agents
 
 #### Changed

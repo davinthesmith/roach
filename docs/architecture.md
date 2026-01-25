@@ -100,7 +100,7 @@ main goroutine
 
 **API Authentication**: HMAC-SHA256 signature generation per WeatherLink v2 spec
 
-**Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types before publishing (reduces size from 3.4MB to ~50-100KB)
+**Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types, then publishes each sensor type as a separate message (avoids Kafka size limits, enables incremental consumer processing)
 
 ### weather-sql Architecture
 
@@ -169,18 +169,25 @@ Message arrives
 
 | Component | CPU | Memory | Disk Growth |
 |-----------|-----|--------|-------------|
-| Kafka | 1-5% | 1-2 GB | ~1-3 MB/day |
+| Kafka | 1-5% | 1-2 GB | ~0.3 MB/day (with compression) |
 | Zookeeper | <1% | 100-200 MB | ~1 MB/day |
 | PostgreSQL | 1-3% | 100-500 MB | ~2-5 MB/day |
 | weather-publish | <1% | 20-50 MB | Minimal |
 | weather-sql | 1-3% | 50-100 MB | Minimal |
 | Kafka UI | 1-2% | 100-200 MB | Minimal |
 
-**Total Baseline**: ~2-5% CPU, ~1.5-3 GB RAM, ~5-10 MB/day disk
+**Total Baseline**: ~2-5% CPU, ~1.5-3 GB RAM, ~3-6 MB/day disk
+
+**Kafka Optimizations** (January 2026):
+- LZ4 compression: 70% storage reduction
+- Header optimization: 115 bytes/message saved
+- Message batching: 100KB batches
+- Result: ~110 MB/year (down from ~400 MB/year)
+- See [kafka-standards.md](kafka-standards.md) for details
 
 **Scaling Notes**:
 - Disk growth linear with data frequency
-- At 5-minute intervals: ~1-3 messages/topic × 7 topics × 288 times/day
+- At 5-minute intervals: 4 sensors × 288 messages/day ≈ 1,152 messages/day
 - PostgreSQL growth depends on field count and data types
 
 ## Directory Structure

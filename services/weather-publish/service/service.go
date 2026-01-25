@@ -22,7 +22,7 @@ type Service struct {
 	sensorMap        map[int]*models.SensorMetadata
 	sensorTypes      map[int]bool
 	lastMetadataHash map[string]string
-	timestampCache   map[int]int64
+	timestampCache   map[int]map[int]int64 // LSID → data_structure_type → timestamp
 	cacheMutex       sync.RWMutex
 }
 
@@ -36,7 +36,7 @@ func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db 
 		sensorMap:        make(map[int]*models.SensorMetadata),
 		sensorTypes:      make(map[int]bool),
 		lastMetadataHash: make(map[string]string),
-		timestampCache:   make(map[int]int64),
+		timestampCache:   make(map[int]map[int]int64),
 	}
 }
 
@@ -134,19 +134,28 @@ func (s *Service) getTopicForCategory(category string) string {
 }
 
 // checkDuplicate checks if a message with the same timestamp was already published
-func (s *Service) checkDuplicate(lsid int, timestamp int64) bool {
+// Now accounts for data_structure_type to handle sensors with multiple data structures
+func (s *Service) checkDuplicate(lsid int, dataStructureType int, timestamp int64) bool {
 	s.cacheMutex.RLock()
 	defer s.cacheMutex.RUnlock()
 	
-	lastTimestamp, exists := s.timestampCache[lsid]
-	return exists && timestamp == lastTimestamp
+	if structTypes, exists := s.timestampCache[lsid]; exists {
+		if lastTimestamp, exists := structTypes[dataStructureType]; exists {
+			return timestamp == lastTimestamp
+		}
+	}
+	return false
 }
 
 // updateCache updates the timestamp cache
-func (s *Service) updateCache(lsid int, timestamp int64) {
+func (s *Service) updateCache(lsid int, dataStructureType int, timestamp int64) {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
-	s.timestampCache[lsid] = timestamp
+	
+	if s.timestampCache[lsid] == nil {
+		s.timestampCache[lsid] = make(map[int]int64)
+	}
+	s.timestampCache[lsid][dataStructureType] = timestamp
 }
 
 // getKeysFromMap returns the keys from a map[int]bool

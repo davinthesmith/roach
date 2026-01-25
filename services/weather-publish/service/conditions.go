@@ -42,8 +42,8 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 				timestamp = int64(ts)
 			}
 
-		// Check if we've already published this timestamp for this sensor
-		if timestamp > 0 && s.checkDuplicate(sensor.LSID, timestamp) {
+		// Check if we've already published this timestamp for this sensor+data_structure_type
+		if timestamp > 0 && s.checkDuplicate(sensor.LSID, sensor.DataStructureType, timestamp) {
 			messagesSkipped++
 			continue
 		}
@@ -51,15 +51,14 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 		// Generate unique message key using lsid:timestamp
 		key := strconv.Itoa(sensor.LSID) + ":" + strconv.FormatInt(timestamp, 10)
 
+		// Optimized headers: removed redundant static/metadata fields
+		// station_id, station_id_uuid, category, product_name available via metadata lookup
 		headers := map[string]string{
+			"schema_version":      "1",
 			"lsid":                strconv.Itoa(sensor.LSID),
 			"timestamp":           strconv.FormatInt(timestamp, 10),
-			"station_id":          strconv.Itoa(response.StationID),
-			"station_id_uuid":     response.StationIDUUID,
 			"sensor_type":         strconv.Itoa(sensor.SensorType),
 			"data_structure_type": strconv.Itoa(sensor.DataStructureType),
-			"category":            metadata.Category,
-			"product_name":        metadata.ProductName,
 		}
 
 		if err := s.producer.Publish(ctx, topic, key, dataPoint, headers); err != nil {
@@ -69,7 +68,7 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 
 			// Update timestamp cache
 			if timestamp > 0 {
-				s.updateCache(sensor.LSID, timestamp)
+				s.updateCache(sensor.LSID, sensor.DataStructureType, timestamp)
 			}
 		}
 		}

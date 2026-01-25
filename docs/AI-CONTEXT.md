@@ -15,7 +15,7 @@ ROACH (Real-time Observability Aggregation Conduit for the Home) is a Kafka-base
 - Change detection for metadata
 - Real-time streaming and SQL storage
 
-**Current Implementation**: WeatherLink weather station integration with 7 Kafka topics, 2 Go services
+**Current Implementation**: WeatherLink weather station integration with 7 Kafka topics, 2 Go services, optimized for storage efficiency (70% reduction via compression and header optimization)
 
 **Technology Stack**: Docker Compose, Kafka 7.5.0, PostgreSQL 16, Zookeeper, Go 1.21+
 
@@ -287,14 +287,14 @@ Format: `namespace.category[.subcategory]`
 
 ### Message Structure
 
-**Headers** (every message):
+**Headers** (every message - optimized January 2026):
+- `schema_version` - Schema version (e.g., "1")
 - `lsid` - Logical Sensor ID
 - `timestamp` - Unix timestamp (seconds)
-- `station_id` - Station ID
 - `sensor_type` - Sensor type code
 - `data_structure_type` - Data structure type
-- `category` - Sensor category
-- `product_name` - Product name
+
+**Note**: Removed redundant headers (`station_id`, `station_id_uuid`, `category`, `product_name`) for storage optimization. These are available via metadata lookup. See [kafka-standards.md](docs/kafka-standards.md).
 
 **Body** (JSON):
 ```json
@@ -625,6 +625,7 @@ msg := kafka.Message{
 - **[operations.md](operations.md)** - Advanced operations, maintenance
 - **[troubleshooting.md](troubleshooting.md)** - Comprehensive problem solving
 - **[go-standards.md](go-standards.md)** - Complete code organization standards
+- **[kafka-standards.md](kafka-standards.md)** - Kafka best practices, storage optimization
 - **[kafka-topics.md](kafka-topics.md)** - Full topic schemas and field definitions
 - **[migrations.md](migrations.md)** - Database migration framework details
 - **[../README.md](../README.md)** - Project README

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 
@@ -41,10 +42,7 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 
 		// Publish each sensor to metadata topic
 		if err := s.producer.Publish(ctx, "weather.metadata.sensors", key, sensor, map[string]string{
-			"lsid":        strconv.Itoa(sensor.LSID),
-			"sensor_type": strconv.Itoa(sensor.SensorType),
-			"category":    sensor.Category,
-			"station_id":  strconv.Itoa(sensor.StationID),
+			"schema_version": "1",
 		}); err != nil {
 			log.Printf("Failed to publish sensor metadata: %v", err)
 		}
@@ -69,43 +67,52 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 		return nil
 	}
 
-	filteredCatalog := models.SensorCatalogResponse{
-		GeneratedAt:   response.GeneratedAt,
-		SensorCatalog: make([]models.CatalogEntry, 0),
-	}
-
-	// Only include catalog entries for sensor types we actually have
+	// Filter and collect catalog entries for sensor types we actually have
+	var filteredEntries []models.CatalogEntry
 	for _, entry := range response.SensorCatalog {
 		if s.sensorTypes[entry.SensorType] {
-			filteredCatalog.SensorCatalog = append(filteredCatalog.SensorCatalog, entry)
+			filteredEntries = append(filteredEntries, entry)
 		}
+	}
+
+	if len(filteredEntries) == 0 {
+		log.Println("No catalog entries match our sensor types, skipping publish")
+		return nil
 	}
 
 	sensorTypesList := getKeysFromMap(s.sensorTypes)
 	log.Printf("Filtered catalog: %d/%d sensor types (kept: %v)",
-		len(filteredCatalog.SensorCatalog), len(response.SensorCatalog), sensorTypesList)
+		len(filteredEntries), len(response.SensorCatalog), sensorTypesList)
 
-	// Check if filtered catalog has changed
-	filteredBody, _ := json.Marshal(filteredCatalog)
+	// Calculate hash of all filtered entries to detect changes
+	filteredBody, _ := json.Marshal(filteredEntries)
 	hash := internal.CalculateHash(filteredBody)
 	if s.lastMetadataHash["catalog"] == hash {
 		log.Println("Filtered catalog unchanged, skipping publish")
 		return nil
 	}
 
-	// Generate key for catalog - using a constant since there's only one catalog
-	key := "catalog"
-
-	// Publish filtered catalog to metadata topic
-	if err := s.producer.Publish(ctx, "weather.metadata.catalog", key, filteredCatalog, map[string]string{
-		"entry_count": strconv.Itoa(len(filteredCatalog.SensorCatalog)),
-	}); err != nil {
-		return err
+	// Publish each catalog entry as a separate message (avoids large message issues)
+	// This allows consumers to process incrementally and avoids Kafka size limits
+	publishedCount := 0
+	for _, entry := range filteredEntries {
+		key := fmt.Sprintf("sensor_type:%d", entry.SensorType)
+		
+		headers := map[string]string{
+			"schema_version": "1",
+			"catalog_hash":   hash,
+			"generated_at":   strconv.FormatInt(response.GeneratedAt, 10),
+		}
+		
+		if err := s.producer.Publish(ctx, "weather.metadata.catalog", key, entry, headers); err != nil {
+			log.Printf("Failed to publish catalog entry for sensor_type %d: %v", entry.SensorType, err)
+			continue
+		}
+		publishedCount++
 	}
 
 	s.lastMetadataHash["catalog"] = hash
-	log.Printf("Published filtered sensor catalog (%d types, ~%d bytes)",
-		len(filteredCatalog.SensorCatalog), len(filteredBody))
+	log.Printf("Published %d catalog entries as separate messages (hash: %s)", publishedCount, hash[:8])
 	return nil
 }
 
@@ -134,7 +141,8 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 
 	// Publish station info to metadata topic
 	if err := s.producer.Publish(ctx, "weather.metadata.station", key, response, map[string]string{
-		"station_id": s.config.WeatherLinkStationID,
+		"schema_version": "1",
+		"station_id":     s.config.WeatherLinkStationID,
 	}); err != nil {
 		return err
 	}

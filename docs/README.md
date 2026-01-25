@@ -12,6 +12,7 @@
 - **[operations.md](operations.md)** - Advanced operations, maintenance procedures, database operations
 - **[troubleshooting.md](troubleshooting.md)** - Comprehensive problem solving, all known issues and solutions
 - **[go-standards.md](go-standards.md)** - Complete Go code organization standards and patterns
+- **[kafka-standards.md](kafka-standards.md)** - Kafka best practices, optimization guide, storage analysis
 - **[kafka-topics.md](kafka-topics.md)** - Full topic schemas, all fields, message formats
 - **[migrations.md](migrations.md)** - Database migration framework details
 
@@ -24,6 +25,7 @@
 - Operational issues → [operations.md](operations.md)
 - Problems/errors → [troubleshooting.md](troubleshooting.md)
 - Code organization → [go-standards.md](go-standards.md)
+- Kafka best practices → [kafka-standards.md](kafka-standards.md)
 - Topic schemas → [kafka-topics.md](kafka-topics.md)
 
 ## Documentation Guidelines
