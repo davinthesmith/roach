@@ -13,7 +13,7 @@ services:
       - WEATHERLINK_STATION_ID=${WEATHERLINK_STATION_ID}
       - KAFKA_BROKER=kafka:29092
       - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
-      - FETCH_INTERVAL=5m
+      - FETCH_INTERVAL=1m
       - LOG_LEVEL=info
     depends_on:
       kafka:
