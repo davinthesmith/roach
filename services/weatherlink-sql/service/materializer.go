@@ -26,6 +26,12 @@ type Materializer struct {
 	catalogReader  *kafka.Reader
 	batchWriter    *repository.BatchWriter
 	workerPool     *WorkerPool
+	lastProcessed  int64
+	lastErrors     int64
+	lastNumeric    int64
+	lastText       int64
+	lastNull       int64
+	lastFlushes    int64
 }
 
 // New creates a new Materializer
@@ -114,7 +120,7 @@ func (m *Materializer) Start(ctx context.Context) error {
 // Close closes the materializer
 func (m *Materializer) Close() error {
 	log.Println("Closing materializer...")
-	
+
 	// Close Kafka readers
 	if m.catalogReader != nil {
 		m.catalogReader.Close()
@@ -122,26 +128,26 @@ func (m *Materializer) Close() error {
 	if m.metadataReader != nil {
 		m.metadataReader.Close()
 	}
-	
+
 	// Shutdown worker pool
 	if m.workerPool != nil {
 		if err := m.workerPool.Shutdown(context.Background()); err != nil {
 			log.Printf("Error shutting down worker pool: %v", err)
 		}
 	}
-	
+
 	// Close batch writer (flushes remaining records)
 	if m.batchWriter != nil {
 		if err := m.batchWriter.Close(context.Background()); err != nil {
 			log.Printf("Error closing batch writer: %v", err)
 		}
 	}
-	
+
 	// Close connection pool
 	if m.pool != nil {
 		m.pool.Close()
 	}
-	
+
 	log.Println("Materializer closed")
 	return nil
 }
@@ -183,21 +189,29 @@ func (m *Materializer) logMetrics(ctx context.Context) {
 			// Get batch writer metrics
 			numericInserts, textInserts, nullInserts, flushes := m.batchWriter.GetMetrics()
 
-			// Get current batch sizes
-			numericBatch, textBatch, nullBatch := m.batchWriter.GetBatchSizes()
-
-			// Get pool stats
-			stats := m.pool.Stat()
+			// Compute deltas since last metrics tick
+			processedDelta := processed - m.lastProcessed
+			errorsDelta := errors - m.lastErrors
+			numericDelta := numericInserts - m.lastNumeric
+			textDelta := textInserts - m.lastText
+			nullDelta := nullInserts - m.lastNull
+			flushesDelta := flushes - m.lastFlushes
 
 			log.Printf("=== METRICS ===")
-			log.Printf("Worker Pool: processed=%d, errors=%d", processed, errors)
-			log.Printf("Batch Writer: numeric=%d, text=%d, null=%d, flushes=%d", 
+			log.Printf("Pool New: processed=%d, errors=%d", processedDelta, errorsDelta)
+			log.Printf("Pool Totals: processed=%d, errors=%d", processed, errors)
+			log.Printf("Batch New: numeric=%d, text=%d, null=%d, flushes=%d",
+				numericDelta, textDelta, nullDelta, flushesDelta)
+			log.Printf("Batch Totals: numeric=%d, text=%d, null=%d, flushes=%d",
 				numericInserts, textInserts, nullInserts, flushes)
-			log.Printf("Current Batches: numeric=%d, text=%d, null=%d", 
-				numericBatch, textBatch, nullBatch)
-			log.Printf("DB Pool: acquired=%d, idle=%d, max=%d", 
-				stats.AcquiredConns(), stats.IdleConns(), stats.MaxConns())
 			log.Printf("===============")
+
+			m.lastProcessed = processed
+			m.lastErrors = errors
+			m.lastNumeric = numericInserts
+			m.lastText = textInserts
+			m.lastNull = nullInserts
+			m.lastFlushes = flushes
 		}
 	}
 }
