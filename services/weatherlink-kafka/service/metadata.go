@@ -90,35 +90,47 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 	log.Printf("Filtered catalog: %d/%d sensor types (kept: %v)",
 		len(filteredEntries), len(response.SensorCatalog), sensorTypesList)
 
-	// Calculate hash of all filtered entries to detect changes
-	filteredBody, _ := json.Marshal(filteredEntries)
-	hash := util.CalculateHash(filteredBody)
-	if s.lastMetadataHash["catalog"] == hash {
-		log.Println("Filtered catalog unchanged, skipping publish")
-		return nil
-	}
-
 	// Publish each catalog entry as a separate message (avoids large message issues)
 	// This allows consumers to process incrementally and avoids Kafka size limits
 	publishedCount := 0
+	skippedCount := 0
 	for _, entry := range filteredEntries {
-		key := fmt.Sprintf("sensor_type:%d", entry.SensorType)
-		
+		maxStructureType, ok := maxDataStructureType(entry)
+		if !ok {
+			log.Printf("No valid data_structure_type found for sensor_type %d, skipping", entry.SensorType)
+			continue
+		}
+		key := fmt.Sprintf("%d:%d", entry.SensorType, maxStructureType)
+
+		s.catalogMutex.RLock()
+		_, exists := s.existingCatalogKeys[key]
+		s.catalogMutex.RUnlock()
+		if exists {
+			skippedCount++
+			continue
+		}
+
 		headers := map[string]string{
 			"schema_version": "1",
-			"catalog_hash":   hash,
 			"generated_at":   strconv.FormatInt(response.GeneratedAt, 10),
 		}
-		
+
 		if err := s.producer.Publish(ctx, "weather.metadata.catalog", key, entry, headers); err != nil {
 			log.Printf("Failed to publish catalog entry for sensor_type %d: %v", entry.SensorType, err)
 			continue
 		}
 		publishedCount++
+
+		s.catalogMutex.Lock()
+		s.existingCatalogKeys[key] = struct{}{}
+		s.catalogMutex.Unlock()
 	}
 
-	s.lastMetadataHash["catalog"] = hash
-	log.Printf("Published %d catalog entries as separate messages (hash: %s)", publishedCount, hash[:8])
+	if skippedCount > 0 {
+		log.Printf("Published %d catalog entries, skipped %d duplicates", publishedCount, skippedCount)
+	} else {
+		log.Printf("Published %d catalog entries as separate messages", publishedCount)
+	}
 	return nil
 }
 
@@ -162,4 +174,20 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 	s.lastMetadataHash["station"] = hash
 	log.Println("Published station info")
 	return nil
+}
+
+func maxDataStructureType(entry models.CatalogEntry) (int, bool) {
+	maxValue := 0
+	found := false
+	for _, dataStructure := range entry.DataStructures {
+		value, err := strconv.Atoi(dataStructure.DataStructureType)
+		if err != nil {
+			continue
+		}
+		if !found || value > maxValue {
+			maxValue = value
+			found = true
+		}
+	}
+	return maxValue, found
 }

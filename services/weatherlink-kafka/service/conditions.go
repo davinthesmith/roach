@@ -52,7 +52,7 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 
 			// Skip if key already exists in Kafka (dedup across restarts).
 			s.keysMutex.RLock()
-			exists := s.existingKeys[key]
+			_, exists := s.existingKeys[key]
 			s.keysMutex.RUnlock()
 			if exists {
 				messagesSkipped++
@@ -83,7 +83,7 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 				messagesPublished++
 
 				s.keysMutex.Lock()
-				s.existingKeys[key] = true
+				s.existingKeys[key] = struct{}{}
 				s.keysMutex.Unlock()
 
 				// Update timestamp cache

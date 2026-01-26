@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	libkafka "weatherlink-kafka/kafka"
 )
 
-// scanExistingKeys scans Kafka topics to find existing message keys (lsid:timestamp).
-func (s *Service) scanExistingKeys(ctx context.Context, topics []string) error {
+// scanExistingKeys scans Kafka topics to find existing message keys.
+func (s *Service) scanExistingKeys(ctx context.Context, topics []string, target map[string]struct{}, mutex *sync.RWMutex) error {
 	broker := os.Getenv("KAFKA_BROKER")
 	if broker == "" {
 		broker = "kafka:29092"
@@ -103,10 +104,10 @@ scanLoop:
 			}
 
 			key := string(msg.Key)
-			if key != "" {
-				s.keysMutex.Lock()
-				s.existingKeys[key] = true
-				s.keysMutex.Unlock()
+			if key != "" && target != nil {
+				mutex.Lock()
+				target[key] = struct{}{}
+				mutex.Unlock()
 			}
 
 			messagesScanned++
@@ -121,6 +122,10 @@ scanLoop:
 		}
 	}
 
-	log.Printf("  Scan complete: Found %d unique keys from %d messages", len(s.existingKeys), messagesScanned)
+	uniqueKeys := 0
+	if target != nil {
+		uniqueKeys = len(target)
+	}
+	log.Printf("  Scan complete: Found %d unique keys from %d messages", uniqueKeys, messagesScanned)
 	return nil
 }

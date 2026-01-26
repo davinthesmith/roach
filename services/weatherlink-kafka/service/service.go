@@ -15,31 +15,34 @@ import (
 
 // Service manages the weather data collection
 type Service struct {
-	config           models.Config
-	apiClient        *api.Client
-	producer         *kafka.Producer
-	db               *sql.DB
-	sensorMap        map[int]*models.SensorMetadata
-	sensorTypes      map[int]bool
-	lastMetadataHash map[string]string
-	timestampCache   map[int]map[int]int64 // LSID → data_structure_type → timestamp
-	cacheMutex       sync.RWMutex
-	existingKeys     map[string]bool // lsid:timestamp keys scanned from Kafka
-	keysMutex        sync.RWMutex
+	config              models.Config
+	apiClient           *api.Client
+	producer            *kafka.Producer
+	db                  *sql.DB
+	sensorMap           map[int]*models.SensorMetadata
+	sensorTypes         map[int]bool
+	lastMetadataHash    map[string]string
+	timestampCache      map[int]map[int]int64 // LSID → data_structure_type → timestamp
+	cacheMutex          sync.RWMutex
+	existingKeys        map[string]struct{} // lsid:timestamp keys scanned from Kafka
+	keysMutex           sync.RWMutex
+	existingCatalogKeys map[string]struct{} // catalog keys scanned from Kafka
+	catalogMutex        sync.RWMutex
 }
 
 // New creates a new Service
 func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db *sql.DB) *Service {
 	return &Service{
-		config:           cfg,
-		apiClient:        apiClient,
-		producer:         producer,
-		db:               db,
-		sensorMap:        make(map[int]*models.SensorMetadata),
-		sensorTypes:      make(map[int]bool),
-		lastMetadataHash: make(map[string]string),
-		timestampCache:   make(map[int]map[int]int64),
-		existingKeys:     make(map[string]bool),
+		config:              cfg,
+		apiClient:           apiClient,
+		producer:            producer,
+		db:                  db,
+		sensorMap:           make(map[int]*models.SensorMetadata),
+		sensorTypes:         make(map[int]bool),
+		lastMetadataHash:    make(map[string]string),
+		timestampCache:      make(map[int]map[int]int64),
+		existingKeys:        make(map[string]struct{}),
+		existingCatalogKeys: make(map[string]struct{}),
 	}
 }
 
@@ -54,8 +57,12 @@ func (s *Service) Start(ctx context.Context) error {
 
 	// Scan Kafka for existing keys to prevent duplicates across restarts.
 	topics := []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health", "weather.other"}
-	if err := s.scanExistingKeys(ctx, topics); err != nil {
+	if err := s.scanExistingKeys(ctx, topics, s.existingKeys, &s.keysMutex); err != nil {
 		log.Printf("Warning: Failed to scan Kafka for existing keys: %v", err)
+	}
+
+	if err := s.scanExistingKeys(ctx, []string{"weather.metadata.catalog"}, s.existingCatalogKeys, &s.catalogMutex); err != nil {
+		log.Printf("Warning: Failed to scan Kafka catalog keys: %v", err)
 	}
 
 	// Fetch metadata on startup - ORDER MATTERS!
