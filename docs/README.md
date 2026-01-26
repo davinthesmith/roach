@@ -8,6 +8,7 @@ When working with this project:
 2. **DO update docs**: If new features are added that change user or developer experience, you MUST update documentation in `docs/`. Keep it terse and optimized for AI Agents.
 3. **NO historical information outside of CHANGELOG.md** - All changes, fixes, checklists, summaries, solution details, and updates belong in CHANGELOG.md only
 4. **DO keep AI-CONTEXT.md updated**: - Ensure any pertinent changes are included. (optimized)
+5. **DO NOT update past CHANGELOG entries**: - Append to the top of the Changelog
 
 ### Quick context
 **For AI Agents**: Start with [AI-CONTEXT.md](AI-CONTEXT.md) - single file with 80% of what you need (740 lines).

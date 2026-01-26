@@ -181,10 +181,15 @@ This ensures metadata topics only contain meaningful change events, not duplicat
 
 ### Deduplication
 
-**Timestamp-based cache**:
+**Kafka key cache (primary)**:
+- Scans weather topics on startup to build an in-memory set of existing keys (`lsid:timestamp`)
+- Skips publishing if the key is already present in Kafka
+- Adds new keys to the cache after successful publish
+
+**Timestamp-based cache (secondary)**:
 - In-memory cache: `map[LSID]map[data_structure_type]timestamp`
 - Rehydrated from PostgreSQL on startup (last 24 hours)
-- Prevents duplicate messages from API
+- Prevents duplicate messages within the current runtime window
 
 ## Message Format
 

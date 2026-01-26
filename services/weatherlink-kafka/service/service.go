@@ -24,6 +24,8 @@ type Service struct {
 	lastMetadataHash map[string]string
 	timestampCache   map[int]map[int]int64 // LSID → data_structure_type → timestamp
 	cacheMutex       sync.RWMutex
+	existingKeys     map[string]bool // lsid:timestamp keys scanned from Kafka
+	keysMutex        sync.RWMutex
 }
 
 // New creates a new Service
@@ -37,6 +39,7 @@ func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db 
 		sensorTypes:      make(map[int]bool),
 		lastMetadataHash: make(map[string]string),
 		timestampCache:   make(map[int]map[int]int64),
+		existingKeys:     make(map[string]bool),
 	}
 }
 
@@ -47,6 +50,12 @@ func (s *Service) Start(ctx context.Context) error {
 		if err := s.rehydrateCache(ctx); err != nil {
 			log.Printf("Warning: Failed to rehydrate cache: %v", err)
 		}
+	}
+
+	// Scan Kafka for existing keys to prevent duplicates across restarts.
+	topics := []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health", "weather.other"}
+	if err := s.scanExistingKeys(ctx, topics); err != nil {
+		log.Printf("Warning: Failed to scan Kafka for existing keys: %v", err)
 	}
 
 	// Fetch metadata on startup - ORDER MATTERS!
@@ -138,7 +147,7 @@ func (s *Service) getTopicForCategory(category string) string {
 func (s *Service) checkDuplicate(lsid int, dataStructureType int, timestamp int64) bool {
 	s.cacheMutex.RLock()
 	defer s.cacheMutex.RUnlock()
-	
+
 	if structTypes, exists := s.timestampCache[lsid]; exists {
 		if lastTimestamp, exists := structTypes[dataStructureType]; exists {
 			return timestamp == lastTimestamp
@@ -151,9 +160,12 @@ func (s *Service) checkDuplicate(lsid int, dataStructureType int, timestamp int6
 func (s *Service) updateCache(lsid int, dataStructureType int, timestamp int64) {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
-	
+
 	if s.timestampCache[lsid] == nil {
 		s.timestampCache[lsid] = make(map[int]int64)
+	}
+	if lastTimestamp, exists := s.timestampCache[lsid][dataStructureType]; exists && timestamp <= lastTimestamp {
+		return
 	}
 	s.timestampCache[lsid][dataStructureType] = timestamp
 }

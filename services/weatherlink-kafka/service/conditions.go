@@ -16,6 +16,7 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 
 	messagesPublished := 0
 	messagesSkipped := 0
+	seenKeys := make(map[string]struct{})
 
 	for _, sensor := range response.Sensors {
 		// Get sensor metadata
@@ -42,35 +43,54 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 				timestamp = int64(ts)
 			}
 
-		// Check if we've already published this timestamp for this sensor+data_structure_type
-		if timestamp > 0 && s.checkDuplicate(sensor.LSID, sensor.DataStructureType, timestamp) {
-			messagesSkipped++
-			continue
-		}
-
-		// Generate unique message key using lsid:timestamp
-		key := strconv.Itoa(sensor.LSID) + ":" + strconv.FormatInt(timestamp, 10)
-
-		// Optimized headers: removed redundant static/metadata fields
-		// station_id, station_id_uuid, category, product_name available via metadata lookup
-		headers := map[string]string{
-			"schema_version":      "1",
-			"lsid":                strconv.Itoa(sensor.LSID),
-			"timestamp":           strconv.FormatInt(timestamp, 10),
-			"sensor_type":         strconv.Itoa(sensor.SensorType),
-			"data_structure_type": strconv.Itoa(sensor.DataStructureType),
-		}
-
-		if err := s.producer.Publish(ctx, topic, key, dataPoint, headers); err != nil {
-			log.Printf("Failed to publish data point: %v", err)
-		} else {
-			messagesPublished++
-
-			// Update timestamp cache
-			if timestamp > 0 {
-				s.updateCache(sensor.LSID, sensor.DataStructureType, timestamp)
+			// Generate unique message key using lsid:timestamp
+			key := strconv.Itoa(sensor.LSID) + ":" + strconv.FormatInt(timestamp, 10)
+			if _, exists := seenKeys[key]; exists {
+				messagesSkipped++
+				continue
 			}
-		}
+
+			// Skip if key already exists in Kafka (dedup across restarts).
+			s.keysMutex.RLock()
+			exists := s.existingKeys[key]
+			s.keysMutex.RUnlock()
+			if exists {
+				messagesSkipped++
+				continue
+			}
+
+			// Check if we've already published this timestamp for this sensor+data_structure_type
+			if timestamp > 0 && s.checkDuplicate(sensor.LSID, sensor.DataStructureType, timestamp) {
+				messagesSkipped++
+				continue
+			}
+
+			seenKeys[key] = struct{}{}
+
+			// Optimized headers: removed redundant static/metadata fields
+			// station_id, station_id_uuid, category, product_name available via metadata lookup
+			headers := map[string]string{
+				"schema_version":      "1",
+				"lsid":                strconv.Itoa(sensor.LSID),
+				"timestamp":           strconv.FormatInt(timestamp, 10),
+				"sensor_type":         strconv.Itoa(sensor.SensorType),
+				"data_structure_type": strconv.Itoa(sensor.DataStructureType),
+			}
+
+			if err := s.producer.Publish(ctx, topic, key, dataPoint, headers); err != nil {
+				log.Printf("Failed to publish data point: %v", err)
+			} else {
+				messagesPublished++
+
+				s.keysMutex.Lock()
+				s.existingKeys[key] = true
+				s.keysMutex.Unlock()
+
+				// Update timestamp cache
+				if timestamp > 0 {
+					s.updateCache(sensor.LSID, sensor.DataStructureType, timestamp)
+				}
+			}
 		}
 	}
 
