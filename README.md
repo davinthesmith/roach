@@ -66,7 +66,6 @@ roach/
 ├── scripts/                           # Helper scripts
 ├── docs/                              # Documentation
 ├── services/                          # Service implementations
-│   ├── weatherlink-lib/              # Shared WeatherLink API client and models
 │   ├── weatherlink-kafka/           # Real-time data ingestion (API → Kafka)
 │   ├── weatherlink-sql/     # Real-time materialization (Kafka → PostgreSQL)
 │   ├── weatherlink-kafka-backfill/     # Historical backfill (API → Kafka)
@@ -129,7 +128,7 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/weatherlink/sql-backfill.sh --topics weather.iss --workers 16
 
 # Restart service
-./scripts/restart-all.sh weather
+./scripts/restart-all.sh weatherlink-kafka
 
 # Stop all
 ./scripts/stop-all.sh
@@ -138,12 +137,6 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 See [Operations](docs/operations.md) for complete command reference.
 
 ## Services
-
-### weatherlink-lib
-Shared library containing:
-- WeatherLink API client with authentication
-- Kafka producer with idempotent guarantees
-- Common data models and utilities
 
 ### weatherlink-kafka
 Real-time data ingestion service (API → Kafka):
