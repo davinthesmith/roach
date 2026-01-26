@@ -105,7 +105,6 @@ services/weatherlink-kafka/
 ├── README.md            # This file
 ├── api/                 # WeatherLink API client
 │   ├── client.go        # HTTP client wrapper
-│   ├── auth.go          # HMAC-SHA256 authentication
 │   └── weatherlink.go   # API endpoints
 ├── config/              # Configuration management
 │   └── config.go

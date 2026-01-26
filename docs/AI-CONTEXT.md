@@ -269,7 +269,6 @@ weatherlink-kafka/
 │   └── config.go
 ├── api/                 # WeatherLink API client
 │   ├── client.go        # HTTP client wrapper
-│   ├── auth.go          # HMAC-SHA256 authentication
 │   └── weatherlink.go   # API endpoints
 ├── kafka/               # Kafka producer
 │   ├── producer.go      # Idempotent producer
@@ -283,13 +282,15 @@ weatherlink-kafka/
 │   ├── metadata.go      # Metadata fetching
 │   ├── conditions.go    # Current conditions
 │   └── cache.go         # Timestamp cache
+├── testdata/            # Sample API payloads
+│   └── api/             # current.json, sensors.json, service-catalog.json
 └── Dockerfile
 ```
 
 **Key Operations**:
-1. Fetch sensor metadata (on change via hash comparison)
+1. Fetch sensor metadata (on change via hash comparison, ignores `generated_at`)
 2. Fetch sensor catalog (on change via hash comparison)
-3. Fetch station info (on change via hash comparison)
+3. Fetch station info (on change via hash comparison, ignores `generated_at`)
 4. Fetch current conditions (every 5 minutes)
 5. Deduplicate via timestamp cache
 6. Publish to Kafka topics

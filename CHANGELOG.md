@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-01-26
+
+### weatherlink-kafka Metadata Hashing
+
+#### Changed
+- **weatherlink-kafka**: Exclude `generated_at` from sensor and station metadata hash inputs to avoid republishing unchanged metadata.
+
+#### Added
+- **weatherlink-kafka**: Sample WeatherLink API payloads for reference:
+  - `services/weatherlink-kafka/testdata/api/current.json`
+  - `services/weatherlink-kafka/testdata/api/sensors.json`
+  - `services/weatherlink-kafka/testdata/api/sensor-catalog.json`
+
 ## 2026-01-25
 
 ### Script Reorganization - WeatherLink Scripts

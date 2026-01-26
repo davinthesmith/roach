@@ -18,8 +18,14 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 		return err
 	}
 
-	// Marshal to calculate hash
-	body, err := json.Marshal(response)
+	// Marshal to calculate hash (ignore generated_at to avoid duplicates)
+	hashPayload := struct {
+		Sensors []models.SensorMetadata `json:"sensors"`
+	}{
+		Sensors: response.Sensors,
+	}
+
+	body, err := json.Marshal(hashPayload)
 	if err != nil {
 		return err
 	}
@@ -123,8 +129,14 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 		return err
 	}
 
-	// Marshal to calculate hash
-	body, err := json.Marshal(response)
+	// Marshal to calculate hash (ignore generated_at to avoid duplicates)
+	hashPayload := struct {
+		Stations []models.StationInfo `json:"stations"`
+	}{
+		Stations: response.Stations,
+	}
+
+	body, err := json.Marshal(hashPayload)
 	if err != nil {
 		return err
 	}
