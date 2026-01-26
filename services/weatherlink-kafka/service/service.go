@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,99 +14,59 @@ import (
 
 // Service manages the weather data collection
 type Service struct {
-	config              models.Config
-	apiClient           *api.Client
-	producer            *kafka.Producer
-	db                  *sql.DB
-	sensorMap           map[int]*models.SensorMetadata
-	sensorTypes         map[int]bool
-	lastMetadataHash    map[string]string
-	timestampCache      map[int]map[int]int64 // LSID → data_structure_type → timestamp
-	cacheMutex          sync.RWMutex
-	existingKeys        map[string]struct{} // lsid:timestamp keys scanned from Kafka
-	keysMutex           sync.RWMutex
-	existingCatalogKeys map[string]struct{} // catalog keys scanned from Kafka
-	catalogMutex        sync.RWMutex
+	config               models.Config
+	apiClient            *api.Client
+	producer             *kafka.Producer
+	db                   *sql.DB
+	sensorMetadata       map[int]*models.SensorMetadata // by lsid
+	sensorTypes          map[int]struct{}
+	existingRecordKeys   map[string]struct{} // lsid:timestamp keys scanned from Kafka
+	recordKeysMutex      sync.RWMutex
+	existingMetadataKeys map[string]struct{} // metadata keys scanned from Kafka
+	metadataKeysMutex    sync.RWMutex
 }
 
 // New creates a new Service
 func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db *sql.DB) *Service {
 	return &Service{
-		config:              cfg,
-		apiClient:           apiClient,
-		producer:            producer,
-		db:                  db,
-		sensorMap:           make(map[int]*models.SensorMetadata),
-		sensorTypes:         make(map[int]bool),
-		lastMetadataHash:    make(map[string]string),
-		timestampCache:      make(map[int]map[int]int64),
-		existingKeys:        make(map[string]struct{}),
-		existingCatalogKeys: make(map[string]struct{}),
+		config:               cfg,
+		apiClient:            apiClient,
+		producer:             producer,
+		db:                   db,
+		sensorMetadata:       make(map[int]*models.SensorMetadata),
+		sensorTypes:          make(map[int]struct{}),
+		existingRecordKeys:   make(map[string]struct{}),
+		existingMetadataKeys: make(map[string]struct{}),
 	}
 }
 
 // Start starts the weather service
 func (s *Service) Start(ctx context.Context) error {
-	// Connect to PostgreSQL if configured and rehydrate cache
-	if s.db != nil {
-		if err := s.rehydrateCache(ctx); err != nil {
-			log.Printf("Warning: Failed to rehydrate cache: %v", err)
-		}
-	}
-
 	// Scan Kafka for existing keys to prevent duplicates across restarts.
-	topics := []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health", "weather.other"}
-	if err := s.scanExistingKeys(ctx, topics, s.existingKeys, &s.keysMutex); err != nil {
+	if err := s.scanExistingKeys(ctx, []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health", "weather.other"}, s.existingRecordKeys, &s.recordKeysMutex); err != nil {
 		log.Printf("Warning: Failed to scan Kafka for existing keys: %v", err)
 	}
 
-	if err := s.scanExistingKeys(ctx, []string{"weather.metadata.catalog"}, s.existingCatalogKeys, &s.catalogMutex); err != nil {
-		log.Printf("Warning: Failed to scan Kafka catalog keys: %v", err)
+	if err := s.scanExistingKeys(ctx, []string{"weather.metadata.catalog", "weather.metadata.station", "weather.metadata.sensors"}, s.existingMetadataKeys, &s.metadataKeysMutex); err != nil {
+		log.Printf("Warning: Failed to scan Kafka metadata keys: %v", err)
 	}
 
-	// Fetch metadata on startup - ORDER MATTERS!
-	// 1. Sensors first (to populate sensorTypes filter)
-	if err := s.fetchSensorMetadata(ctx); err != nil {
-		log.Printf("Warning: Failed to fetch sensor metadata: %v", err)
-	}
+	// Fetch metadata before starting loop
+	s.fetchAllMetadata(ctx)
 
-	// 2. Catalog second (uses sensorTypes filter)
-	if err := s.fetchSensorCatalog(ctx); err != nil {
-		log.Printf("Warning: Failed to fetch sensor catalog: %v", err)
-	}
-
-	// 3. Station info last
-	if err := s.fetchStationInfo(ctx); err != nil {
-		log.Printf("Warning: Failed to fetch station info: %v", err)
-	}
-
-	// Start background goroutine for daily metadata updates
+	// Start background goroutine for periodic metadata updates
 	go s.metadataUpdateLoop(ctx)
 
+	// Fetch current conditions before loop
+	s.fetchAllCurrentConditions(ctx)
+
 	// Start main loop for current conditions
-	ticker := time.NewTicker(s.config.FetchInterval)
-	defer ticker.Stop()
-
-	// Fetch immediately on start
-	if err := s.fetchCurrentConditions(ctx); err != nil {
-		log.Printf("Error fetching current conditions: %v", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := s.fetchCurrentConditions(ctx); err != nil {
-				log.Printf("Error fetching current conditions: %v", err)
-			}
-		}
-	}
+	return s.currentConditionsUpdateLoop(ctx)
 }
 
 // metadataUpdateLoop runs periodic metadata updates
 func (s *Service) metadataUpdateLoop(ctx context.Context) {
-	ticker := time.NewTicker(24 * time.Hour)
+	ticker := time.NewTicker(s.config.MetadataFetchInterval)
 	defer ticker.Stop()
 
 	for {
@@ -115,73 +74,22 @@ func (s *Service) metadataUpdateLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			log.Println("Daily metadata update...")
-
-			if err := s.fetchSensorMetadata(ctx); err != nil {
-				log.Printf("Error updating sensor metadata: %v", err)
-			}
-
-			if err := s.fetchSensorCatalog(ctx); err != nil {
-				log.Printf("Error updating sensor catalog: %v", err)
-			}
-
-			if err := s.fetchStationInfo(ctx); err != nil {
-				log.Printf("Error updating station info: %v", err)
-			}
+			s.fetchAllMetadata(ctx)
 		}
 	}
 }
 
-// getTopicForCategory determines the Kafka topic based on sensor category
-func (s *Service) getTopicForCategory(category string) string {
-	switch strings.ToUpper(category) {
-	case "ISS":
-		return "weather.iss"
-	case "BAROMETER":
-		return "weather.barometer"
-	case "INSIDE TEMP/HUM":
-		return "weather.indoor"
-	case "HEALTH":
-		return "weather.health"
-	default:
-		log.Printf("Unknown category '%s', using default topic", category)
-		return "weather.other"
-	}
-}
+// currentConditionsUpdateLoop runs periodic current conditions updates
+func (s *Service) currentConditionsUpdateLoop(ctx context.Context) error {
+	ticker := time.NewTicker(s.config.FetchInterval)
+	defer ticker.Stop()
 
-// checkDuplicate checks if a message with the same timestamp was already published
-// Now accounts for data_structure_type to handle sensors with multiple data structures
-func (s *Service) checkDuplicate(lsid int, dataStructureType int, timestamp int64) bool {
-	s.cacheMutex.RLock()
-	defer s.cacheMutex.RUnlock()
-
-	if structTypes, exists := s.timestampCache[lsid]; exists {
-		if lastTimestamp, exists := structTypes[dataStructureType]; exists {
-			return timestamp == lastTimestamp
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			s.fetchAllCurrentConditions(ctx)
 		}
 	}
-	return false
-}
-
-// updateCache updates the timestamp cache
-func (s *Service) updateCache(lsid int, dataStructureType int, timestamp int64) {
-	s.cacheMutex.Lock()
-	defer s.cacheMutex.Unlock()
-
-	if s.timestampCache[lsid] == nil {
-		s.timestampCache[lsid] = make(map[int]int64)
-	}
-	if lastTimestamp, exists := s.timestampCache[lsid][dataStructureType]; exists && timestamp <= lastTimestamp {
-		return
-	}
-	s.timestampCache[lsid][dataStructureType] = timestamp
-}
-
-// getKeysFromMap returns the keys from a map[int]bool
-func getKeysFromMap(m map[int]bool) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

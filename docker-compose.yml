@@ -14,6 +14,7 @@ services:
       - KAFKA_BROKER=kafka:29092
       - POSTGRES_DSN=host=postgres port=5432 user=roach password=${POSTGRES_PASSWORD} dbname=roach sslmode=disable
       - FETCH_INTERVAL=1m
+      - METADATA_FETCH_INTERVAL=168h # 7 days
       - LOG_LEVEL=info
     depends_on:
       kafka:

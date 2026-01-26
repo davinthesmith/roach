@@ -7,13 +7,14 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	WeatherLinkAPIKey    string
-	WeatherLinkAPISecret string
-	WeatherLinkStationID string
-	KafkaBroker          string
-	PostgresDSN          string
-	FetchInterval        time.Duration
-	LogLevel             string
+	WeatherLinkAPIKey     string
+	WeatherLinkAPISecret  string
+	WeatherLinkStationID  string
+	KafkaBroker           string
+	PostgresDSN           string
+	FetchInterval         time.Duration
+	MetadataFetchInterval time.Duration
+	LogLevel              string
 }
 
 // CurrentConditionsResponse represents the response from the current conditions API

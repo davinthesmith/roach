@@ -2,14 +2,31 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"weatherlink-kafka/models"
 	"weatherlink-kafka/util"
 )
+
+// fetchAllMetadata runs the metadata update flow with logs matching the update loop.
+func (s *Service) fetchAllMetadata(ctx context.Context) {
+	log.Println("Metadata update...")
+
+	if err := s.fetchSensorMetadata(ctx); err != nil {
+		log.Printf("Error updating sensor metadata: %v", err)
+	}
+
+	if err := s.fetchCatalogMetadata(ctx); err != nil {
+		log.Printf("Error updating sensor catalog: %v", err)
+	}
+
+	if err := s.fetchStationMetadata(ctx); err != nil {
+		log.Printf("Error updating station info: %v", err)
+	}
+}
 
 // fetchSensorMetadata fetches sensor metadata from the API
 func (s *Service) fetchSensorMetadata(ctx context.Context) error {
@@ -18,50 +35,45 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 		return err
 	}
 
-	// Marshal to calculate hash (ignore generated_at to avoid duplicates)
-	hashPayload := struct {
-		Sensors []models.SensorMetadata `json:"sensors"`
-	}{
-		Sensors: response.Sensors,
-	}
-
-	body, err := json.Marshal(hashPayload)
-	if err != nil {
-		return err
-	}
-
-	// Check if metadata has changed
-	hash := util.CalculateHash(body)
-	if s.lastMetadataHash["sensors"] == hash {
-		log.Println("Sensor metadata unchanged, skipping publish")
-		return nil
-	}
+	weekStart := util.StartOfWeekUnix(time.Now().UTC())
 
 	// Update sensor map AND dynamically track sensor types from API
 	for i := range response.Sensors {
 		sensor := &response.Sensors[i]
-		s.sensorMap[sensor.LSID] = sensor
-		s.sensorTypes[sensor.SensorType] = true
+		s.sensorMetadata[sensor.LSID] = sensor
+		s.sensorTypes[sensor.SensorType] = struct{}{}
 
-		// Generate unique key for sensor metadata: lsid:{lsid}
-		key := "lsid:" + strconv.Itoa(sensor.LSID)
+		// Generate unique key for sensor metadata: {lsid}:{weekStart}
+		key := fmt.Sprintf("%d:%d", sensor.LSID, weekStart)
+
+		// Skip if key already exists in Kafka (dedup across restarts).
+		s.metadataKeysMutex.RLock()
+		_, exists := s.existingMetadataKeys[key]
+		s.metadataKeysMutex.RUnlock()
+		if exists {
+			continue
+		}
 
 		// Publish each sensor to metadata topic
 		if err := s.producer.Publish(ctx, "weather.metadata.sensors", key, sensor, map[string]string{
 			"schema_version": "1",
 		}); err != nil {
 			log.Printf("Failed to publish sensor metadata: %v", err)
+			continue
 		}
+
+		s.metadataKeysMutex.Lock()
+		s.existingMetadataKeys[key] = struct{}{}
+		s.metadataKeysMutex.Unlock()
 	}
 
-	s.lastMetadataHash["sensors"] = hash
 	log.Printf("Published metadata for %d sensors (sensor types: %v)",
-		len(response.Sensors), getKeysFromMap(s.sensorTypes))
+		len(response.Sensors), util.KeysFromSet(s.sensorTypes))
 	return nil
 }
 
-// fetchSensorCatalog fetches the sensor catalog from the API
-func (s *Service) fetchSensorCatalog(ctx context.Context) error {
+// fetchCatalogMetadata fetches the sensor catalog from the API
+func (s *Service) fetchCatalogMetadata(ctx context.Context) error {
 	response, err := s.apiClient.FetchSensorCatalog()
 	if err != nil {
 		return err
@@ -76,7 +88,7 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 	// Filter and collect catalog entries for sensor types we actually have
 	var filteredEntries []models.CatalogEntry
 	for _, entry := range response.SensorCatalog {
-		if s.sensorTypes[entry.SensorType] {
+		if _, ok := s.sensorTypes[entry.SensorType]; ok {
 			filteredEntries = append(filteredEntries, entry)
 		}
 	}
@@ -86,7 +98,7 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 		return nil
 	}
 
-	sensorTypesList := getKeysFromMap(s.sensorTypes)
+	sensorTypesList := util.KeysFromSet(s.sensorTypes)
 	log.Printf("Filtered catalog: %d/%d sensor types (kept: %v)",
 		len(filteredEntries), len(response.SensorCatalog), sensorTypesList)
 
@@ -102,9 +114,9 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 		}
 		key := fmt.Sprintf("%d:%d", entry.SensorType, maxStructureType)
 
-		s.catalogMutex.RLock()
-		_, exists := s.existingCatalogKeys[key]
-		s.catalogMutex.RUnlock()
+		s.metadataKeysMutex.RLock()
+		_, exists := s.existingMetadataKeys[key]
+		s.metadataKeysMutex.RUnlock()
 		if exists {
 			skippedCount++
 			continue
@@ -121,9 +133,9 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 		}
 		publishedCount++
 
-		s.catalogMutex.Lock()
-		s.existingCatalogKeys[key] = struct{}{}
-		s.catalogMutex.Unlock()
+		s.metadataKeysMutex.Lock()
+		s.existingMetadataKeys[key] = struct{}{}
+		s.metadataKeysMutex.Unlock()
 	}
 
 	if skippedCount > 0 {
@@ -134,34 +146,25 @@ func (s *Service) fetchSensorCatalog(ctx context.Context) error {
 	return nil
 }
 
-// fetchStationInfo fetches station information from the API
-func (s *Service) fetchStationInfo(ctx context.Context) error {
+// fetchStationMetadata fetches station information from the API
+func (s *Service) fetchStationMetadata(ctx context.Context) error {
 	response, err := s.apiClient.FetchStationInfo()
 	if err != nil {
 		return err
 	}
 
-	// Marshal to calculate hash (ignore generated_at to avoid duplicates)
-	hashPayload := struct {
-		Stations []models.StationInfo `json:"stations"`
-	}{
-		Stations: response.Stations,
-	}
+	weekStart := util.StartOfWeekUnix(time.Now().UTC())
 
-	body, err := json.Marshal(hashPayload)
-	if err != nil {
-		return err
-	}
+	// Generate key for station info: {station_id}:{weekStart}
+	key := fmt.Sprintf("%s:%d", s.config.WeatherLinkStationID, weekStart)
 
-	// Check if station info has changed
-	hash := util.CalculateHash(body)
-	if s.lastMetadataHash["station"] == hash {
-		log.Println("Station info unchanged, skipping publish")
+	// Skip if key already exists in Kafka (dedup across restarts).
+	s.metadataKeysMutex.RLock()
+	_, exists := s.existingMetadataKeys[key]
+	s.metadataKeysMutex.RUnlock()
+	if exists {
 		return nil
 	}
-
-	// Generate key for station info: station:{station_id}
-	key := "station:" + s.config.WeatherLinkStationID
 
 	// Publish station info to metadata topic
 	if err := s.producer.Publish(ctx, "weather.metadata.station", key, response, map[string]string{
@@ -171,7 +174,10 @@ func (s *Service) fetchStationInfo(ctx context.Context) error {
 		return err
 	}
 
-	s.lastMetadataHash["station"] = hash
+	s.metadataKeysMutex.Lock()
+	s.existingMetadataKeys[key] = struct{}{}
+	s.metadataKeysMutex.Unlock()
+
 	log.Println("Published station info")
 	return nil
 }

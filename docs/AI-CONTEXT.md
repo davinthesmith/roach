@@ -85,9 +85,9 @@ docker ps                       # Check containers
 **weatherlink-kafka** (`roach-weatherlink-kafka`)
 - Language: Go
 - Purpose: Real-time data ingestion (API → Kafka)
-- Interval: 5 minutes (configurable via `FETCH_INTERVAL`)
+- Interval: `FETCH_INTERVAL` for data, `METADATA_FETCH_INTERVAL` for metadata
 - Topics Published: 7 (4 data, 3 metadata)
-- Deduplication: Timestamp-based cache with PostgreSQL rehydration
+- Deduplication: Kafka key cache (record keys + metadata keys)
 
 **weatherlink-sql** (`roach-weatherlink-sql`)
 - Language: Go
@@ -115,7 +115,7 @@ docker ps                       # Check containers
 **Real-time Pipeline**:
 ```
 WeatherLink API (HTTPS)
-    ↓ Every 5 minutes
+    ↓ Every `FETCH_INTERVAL`
 weatherlink-kafka (Go) - Deduplication
     ↓ Publish JSON messages
 Kafka Broker (Infinite retention)
@@ -180,6 +180,7 @@ POSTGRES_PASSWORD=<secure_password>
 KAFKA_BROKER=kafka:29092        # Default
 POSTGRES_DSN=host=postgres...   # Default provided
 FETCH_INTERVAL=5m               # 5 minutes default (Go duration format)
+METADATA_FETCH_INTERVAL=168h   # 7 days default (Go duration format)
 LOG_LEVEL=info                  # debug|info|warn|error
 ```
 
@@ -225,13 +226,14 @@ END_OFFSET=-1                   # -1=latest
 
 ### Common Customizations
 
-**Change fetch interval**:
+**Change fetch intervals**:
 ```yaml
 # docker-compose.yml
 services:
   weatherlink-kafka:
     environment:
-      - FETCH_INTERVAL=10m  # Change from 5m to 10m
+      - FETCH_INTERVAL=10m           # Change from 5m to 10m
+      - METADATA_FETCH_INTERVAL=72h # Change from 168h to 72h
 ```
 
 **Limit data retention** (not recommended, default is infinite):
@@ -275,25 +277,25 @@ weatherlink-kafka/
 │   └── consumer.go      # Scanner utilities
 ├── models/              # Data models
 │   └── types.go
-├── util/                # Hash utilities
-│   └── hash.go
+├── util/                # Shared helpers
+│   ├── hash.go
+│   ├── topic.go
+│   └── week.go
 ├── service/             # Business logic
 │   ├── service.go       # Orchestration
 │   ├── metadata.go      # Metadata fetching
-│   ├── conditions.go    # Current conditions
-│   └── cache.go         # Timestamp cache
+│   └── conditions.go    # Current conditions
 ├── testdata/            # Sample API payloads
 │   └── api/             # current.json, sensors.json, service-catalog.json
 └── Dockerfile
 ```
 
 **Key Operations**:
-1. Fetch sensor metadata (on change via hash comparison, ignores `generated_at`)
-2. Fetch sensor catalog (on change via hash comparison)
-3. Fetch station info (on change via hash comparison, ignores `generated_at`)
-4. Fetch current conditions (every 5 minutes)
-5. Deduplicate via timestamp cache
-6. Publish to Kafka topics
+1. Scan Kafka topics to hydrate key caches (records + metadata)
+2. Fetch sensor metadata → catalog → station info on startup and on `METADATA_FETCH_INTERVAL`
+3. Fetch current conditions on `FETCH_INTERVAL`
+4. Deduplicate by Kafka key caches (e.g., `lsid:timestamp` for records, weekly keys for sensor/station metadata)
+5. Publish to Kafka topics
 
 **Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`, `github.com/lib/pq`
 
@@ -341,7 +343,7 @@ weatherlink-sql/
 ### Naming Convention
 Format: `namespace.category[.subcategory]`
 
-### Data Topics (Published every 5 minutes)
+### Data Topics (Published every `FETCH_INTERVAL`)
 
 **weather.iss** - Outdoor weather (Integrated Sensor Suite)
 - Key fields: `temp`, `hum`, `wind_speed_last`, `wind_dir_last`, `rain_rate_last`, `solar_rad`, `uv_index`, `dew_point`, `heat_index`
@@ -355,7 +357,7 @@ Format: `namespace.category[.subcategory]`
 **weather.health** - Console health metrics
 - Key fields: `battery_voltage`, `wifi_rssi`, `uptime`, `firmware_version`, `free_mem`
 
-### Metadata Topics (Published on change only)
+### Metadata Topics (Published every `METADATA_FETCH_INTERVAL`, deduped by key cache)
 
 **weather.metadata.sensors** - Sensor configuration (LSIDs, sensor details)
 **weather.metadata.catalog** - Sensor type catalog (field schemas, units, descriptions)

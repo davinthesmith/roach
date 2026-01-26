@@ -40,6 +40,7 @@ func main() {
 	log.Printf("  - Station ID: %s", cfg.WeatherLinkStationID)
 	log.Printf("  - Kafka Broker: %s", cfg.KafkaBroker)
 	log.Printf("  - Fetch Interval: %s", cfg.FetchInterval)
+	log.Printf("  - Metadata Fetch Interval: %s", cfg.MetadataFetchInterval)
 
 	// Create API client
 	apiClient := api.NewClient(cfg.WeatherLinkAPIKey, cfg.WeatherLinkAPISecret, cfg.WeatherLinkStationID)

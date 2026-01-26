@@ -5,7 +5,18 @@ import (
 	"encoding/json"
 	"log"
 	"strconv"
+
+	"weatherlink-kafka/util"
 )
+
+// fetchAllCurrentConditions runs the metadata update flow with logs matching the update loop.
+func (s *Service) fetchAllCurrentConditions(ctx context.Context) {
+	log.Println("Current Conditions update...")
+
+	if err := s.fetchCurrentConditions(ctx); err != nil {
+		log.Printf("Error fetching current conditions: %v", err)
+	}
+}
 
 // fetchCurrentConditions fetches current conditions from the API
 func (s *Service) fetchCurrentConditions(ctx context.Context) error {
@@ -20,14 +31,14 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 
 	for _, sensor := range response.Sensors {
 		// Get sensor metadata
-		metadata, exists := s.sensorMap[sensor.LSID]
+		metadata, exists := s.sensorMetadata[sensor.LSID]
 		if !exists {
 			log.Printf("Warning: No metadata found for sensor %d, skipping", sensor.LSID)
 			continue
 		}
 
 		// Determine topic based on category
-		topic := s.getTopicForCategory(metadata.Category)
+		topic := util.GetTopicForCategory(metadata.Category)
 
 		// Publish each data point
 		for _, dataPoint := range sensor.Data {
@@ -51,16 +62,10 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 			}
 
 			// Skip if key already exists in Kafka (dedup across restarts).
-			s.keysMutex.RLock()
-			_, exists := s.existingKeys[key]
-			s.keysMutex.RUnlock()
+			s.recordKeysMutex.RLock()
+			_, exists := s.existingRecordKeys[key]
+			s.recordKeysMutex.RUnlock()
 			if exists {
-				messagesSkipped++
-				continue
-			}
-
-			// Check if we've already published this timestamp for this sensor+data_structure_type
-			if timestamp > 0 && s.checkDuplicate(sensor.LSID, sensor.DataStructureType, timestamp) {
 				messagesSkipped++
 				continue
 			}
@@ -82,22 +87,18 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 			} else {
 				messagesPublished++
 
-				s.keysMutex.Lock()
-				s.existingKeys[key] = struct{}{}
-				s.keysMutex.Unlock()
+				s.recordKeysMutex.Lock()
+				s.existingRecordKeys[key] = struct{}{}
+				s.recordKeysMutex.Unlock()
 
-				// Update timestamp cache
-				if timestamp > 0 {
-					s.updateCache(sensor.LSID, sensor.DataStructureType, timestamp)
-				}
 			}
 		}
 	}
 
 	if messagesSkipped > 0 {
-		log.Printf("Published %d sensor readings, skipped %d duplicates", messagesPublished, messagesSkipped)
+		log.Printf("Published %d sensor records, skipped %d duplicates", messagesPublished, messagesSkipped)
 	} else {
-		log.Printf("Published %d sensor readings", messagesPublished)
+		log.Printf("Published %d sensor records", messagesPublished)
 	}
 	return nil
 }

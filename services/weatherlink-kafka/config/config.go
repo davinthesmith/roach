@@ -18,15 +18,24 @@ func Load() models.Config {
 	if err != nil {
 		log.Fatalf("Invalid FETCH_INTERVAL: %v", err)
 	}
+	metadataFetchInterval := os.Getenv("METADATA_FETCH_INTERVAL")
+	if metadataFetchInterval == "" {
+		metadataFetchInterval = "168h"
+	}
+	metadataDuration, err := time.ParseDuration(metadataFetchInterval)
+	if err != nil {
+		log.Fatalf("Invalid METADATA_FETCH_INTERVAL: %v", err)
+	}
 
 	return models.Config{
-		WeatherLinkAPIKey:    os.Getenv("WEATHERLINK_API_KEY"),
-		WeatherLinkAPISecret: os.Getenv("WEATHERLINK_API_SECRET"),
-		WeatherLinkStationID: os.Getenv("WEATHERLINK_STATION_ID"),
-		KafkaBroker:          getEnvOrDefault("KAFKA_BROKER", "kafka:29092"),
-		PostgresDSN:          os.Getenv("POSTGRES_DSN"),
-		FetchInterval:        duration,
-		LogLevel:             getEnvOrDefault("LOG_LEVEL", "info"),
+		WeatherLinkAPIKey:     os.Getenv("WEATHERLINK_API_KEY"),
+		WeatherLinkAPISecret:  os.Getenv("WEATHERLINK_API_SECRET"),
+		WeatherLinkStationID:  os.Getenv("WEATHERLINK_STATION_ID"),
+		KafkaBroker:           getEnvOrDefault("KAFKA_BROKER", "kafka:29092"),
+		PostgresDSN:           os.Getenv("POSTGRES_DSN"),
+		FetchInterval:         duration,
+		MetadataFetchInterval: metadataDuration,
+		LogLevel:              getEnvOrDefault("LOG_LEVEL", "info"),
 	}
 }
 

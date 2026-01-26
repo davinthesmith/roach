@@ -2,6 +2,20 @@
 
 ## 2026-01-26
 
+### weatherlink-kafka Metadata Scheduling and Key Dedup
+
+#### Added
+- **weatherlink-kafka**: `METADATA_FETCH_INTERVAL` configuration (default `168h`) for periodic metadata refresh.
+
+#### Changed
+- **weatherlink-kafka**: Metadata refresh runs on a configurable interval and publishes weekly-keyed sensor/station metadata.
+- **weatherlink-kafka**: Startup flow now fetches metadata and current conditions immediately, matching loop logging.
+- **weatherlink-kafka**: Deduplication now relies on Kafka key caches for records and metadata topics.
+- **weatherlink-kafka**: Topic selection helper moved to `util.GetTopicForCategory()`.
+
+#### Removed
+- **weatherlink-kafka**: Timestamp cache and PostgreSQL cache rehydration logic.
+
 ### weatherlink-kafka Metadata Hashing
 
 #### Changed

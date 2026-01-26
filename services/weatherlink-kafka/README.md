@@ -52,6 +52,7 @@ WEATHERLINK_STATION_ID=your_station_id_here
 KAFKA_BROKER=kafka:29092           # Kafka broker address
 POSTGRES_DSN=host=postgres...      # PostgreSQL for cache rehydration
 FETCH_INTERVAL=5m                  # How often to fetch data
+METADATA_FETCH_INTERVAL=168h       # How often to refresh metadata
 LOG_LEVEL=info                     # Logging level (debug, info, warn, error)
 ```
 
@@ -321,10 +322,10 @@ Published 4 sensor readings, skipped 0 duplicates
 
 ### Adding New Topics
 
-Modify `getTopicForCategory()` in `service/service.go`:
+Modify `GetTopicForCategory()` in `util/topic.go`:
 
 ```go
-func (s *Service) getTopicForCategory(category string) string {
+func GetTopicForCategory(category string) string {
     switch strings.ToUpper(category) {
     case "ISS":
         return "weather.iss"
