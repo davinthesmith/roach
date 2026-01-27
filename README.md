@@ -32,14 +32,13 @@ Access Kafka UI: http://localhost:8080
 - Rich metadata capture with units and descriptions from API
 - Database migration framework with version tracking
 - **Two-stage backfill strategy**:
-  - API→Kafka backfill for historical API data
+  - API→Kafka backfill (weatherlink-kafka backfill mode)
   - Kafka→DB backfill for database recovery
 - Timestamp-based deduplication at database level
 - Conservative rate limiting for API compliance
 - Auto-restart on system boot
 - Web-based monitoring UI
 - Topic-based data organization
-- Change detection for metadata
 - Docker Compose infrastructure
 - Real-time data streaming and SQL storage
 
@@ -68,7 +67,6 @@ roach/
 ├── services/                          # Service implementations
 │   ├── weatherlink-kafka/           # Real-time data ingestion (API → Kafka)
 │   ├── weatherlink-sql/     # Real-time materialization (Kafka → PostgreSQL)
-│   ├── weatherlink-kafka-backfill/     # Historical backfill (API → Kafka)
 │   └── weatherlink-sql-backfill/   # Database backfill (Kafka → PostgreSQL)
 └── data/                             # Persistent data
 ```
@@ -120,8 +118,8 @@ See [AI-CONTEXT.md](docs/AI-CONTEXT.md) for all configuration options.
 ./scripts/db/migrate.sh down    # Rollback last migration
 
 # Historical data backfill (API → Kafka)
-./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s)
-./scripts/weatherlink/kafka-backfill.sh --start 1768780863 --end 1768865863
+BACKFILL_START_TS=$(date -v-24H +%s) BACKFILL_END_TS=$(date +%s) \
+./scripts/weatherlink/kafka-backfill.sh
 
 # Database backfill (Kafka → PostgreSQL)
 ./scripts/weatherlink/sql-backfill.sh
@@ -140,10 +138,11 @@ See [Operations](docs/operations.md) for complete command reference.
 
 ### weatherlink-kafka
 Real-time data ingestion service (API → Kafka):
-- Fetches current conditions every 5 minutes (configurable)
+- Fetches current conditions every `FETCH_INTERVAL`
 - Publishes to Kafka topics based on sensor category
-- Automatic metadata updates daily
-- Timestamp-based duplicate prevention
+- Automatic metadata refresh on `METADATA_FETCH_INTERVAL`
+- Deduplication via Kafka key cache
+- Optional historical backfill via `KAFKA_BACKFILL_ENABLED`
 
 ### weatherlink-sql
 Real-time materialization service (Kafka → PostgreSQL):
@@ -152,14 +151,6 @@ Real-time materialization service (Kafka → PostgreSQL):
 - Enriches records with sensor metadata
 - Handles orphaned messages gracefully
 - High-throughput batched writes using COPY protocol
-
-### weatherlink-kafka-backfill
-Historical API backfill tool (API → Kafka):
-- Fetches historic data from WeatherLink API
-- Splits large ranges into 24-hour windows
-- Conservative rate limiting (8 req/s)
-- Client-side deduplication prevents duplicates
-- Run manually as needed for historical data
 
 ### weatherlink-sql-backfill
 Database backfill tool (Kafka → PostgreSQL):
@@ -176,6 +167,7 @@ Current Kafka topics:
 - `weather.barometer` - Barometric pressure
 - `weather.indoor` - Indoor conditions
 - `weather.health` - Console health
+- `weather.other` - Fallback topic for unknown categories
 - `weather.metadata.*` - Sensor metadata
 
 PostgreSQL tables:

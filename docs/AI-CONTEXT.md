@@ -12,10 +12,9 @@ ROACH (Real-time Observability Aggregation Conduit for the Home) is a Kafka-base
 - Rich metadata capture with units and descriptions
 - Database migration framework
 - Timestamp-based deduplication
-- Change detection for metadata
 - Real-time streaming and SQL storage
 
-**Current Implementation**: WeatherLink weather station integration with 7 Kafka topics, 4 Go services (2 real-time, 2 backfill), optimized for storage efficiency (70% reduction via compression and header optimization)
+**Current Implementation**: WeatherLink weather station integration with 7 core Kafka topics (plus `weather.other` fallback) and 3 Go services (2 real-time, 1 backfill), optimized for storage efficiency via compression and header optimization
 
 **Technology Stack**: Docker Compose, Kafka 7.5.0, PostgreSQL 16, Zookeeper, Go 1.21+
 
@@ -96,11 +95,11 @@ docker ps                       # Check containers
 - Features: Auto-tag creation, metadata enrichment, orphaned message tracking
 - Performance: Batched writes with COPY protocol, worker pool processing
 
-**weatherlink-kafka-backfill** (`roach-weatherlink-kafka-backfill`)
+**weatherlink-kafka** backfill mode
 - Language: Go
 - Purpose: Historical data backfill (API → Kafka)
-- Run Mode: One-shot execution (manual)
-- Features: 24-hour windows, rate limiting (8 req/s), client-side deduplication
+- Run Mode: Optional one-shot execution (enabled via env)
+- Features: 24-hour windows, rate limiting, client-side deduplication
 - Use Case: Populate Kafka with historical API data
 
 **weatherlink-sql-backfill** (`roach-weatherlink-sql-backfill`)
@@ -129,7 +128,7 @@ Devices → Tags → Records
 
 **Two-Stage Backfill Strategy**:
 ```
-Stage 1: API → Kafka (weatherlink-kafka-backfill)
+Stage 1: API → Kafka (weatherlink-kafka backfill mode)
   - Fetch historical data from WeatherLink API
   - 24-hour windows, rate limited (8 req/s)
   - Client-side deduplication
@@ -138,7 +137,7 @@ Stage 1: API → Kafka (weatherlink-kafka-backfill)
 Stage 2: Kafka → DB (weatherlink-sql-backfill)
   - Replay messages from Kafka topics
   - Configurable offset ranges (earliest to latest)
-  - Separate consumer group
+  - Direct partition readers (no consumer group)
   - Populates PostgreSQL when DB is behind
 ```
 
@@ -152,9 +151,8 @@ roach-network (Docker bridge)
 │   ├── postgres:5432 (internal), localhost:5432 (external)
 │   └── kafka-ui:8080
 └── Applications
-    ├── weatherlink-kafka (connects to kafka:29092, postgres:5432)
+    ├── weatherlink-kafka (connects to kafka:29092, postgres:5432 [unused])
     ├── weatherlink-sql (connects to kafka:29092, postgres:5432)
-    ├── weatherlink-kafka-backfill (connects to kafka:29092) [manual]
     └── weatherlink-sql-backfill (connects to kafka:29092, postgres:5432) [manual]
 ```
 
@@ -178,7 +176,7 @@ POSTGRES_PASSWORD=<secure_password>
 **weatherlink-kafka**:
 ```bash
 KAFKA_BROKER=kafka:29092        # Default
-POSTGRES_DSN=host=postgres...   # Default provided
+POSTGRES_DSN=host=postgres...   # Optional (currently unused)
 FETCH_INTERVAL=5m               # 5 minutes default (Go duration format)
 METADATA_FETCH_INTERVAL=168h   # 7 days default (Go duration format)
 LOG_LEVEL=info                  # debug|info|warn|error
@@ -194,11 +192,11 @@ WORKER_POOL_SIZE=4              # Default
 BATCH_FLUSH_INTERVAL_MS=500     # Default
 ```
 
-**weatherlink-kafka-backfill**:
+**weatherlink-kafka** backfill (optional):
 ```bash
-KAFKA_BROKER=kafka:29092        # Default
-LOG_LEVEL=info                  # debug|info|warn|error
-# Plus CLI flags: --start, --end, --workers, --requests-per-second
+KAFKA_BACKFILL_ENABLED=true     # Enable historical backfill
+BACKFILL_START_TS=0             # Unix timestamp (seconds)
+BACKFILL_END_TS=0               # Unix timestamp (0 = now)
 ```
 
 **weatherlink-sql-backfill**:
@@ -222,7 +220,7 @@ END_OFFSET=-1                   # -1=latest
 - Data: `./data/kafka`, `./data/zookeeper`, `./data/postgres`
 - Scripts: `./scripts/*.sh`
 - Documentation: `./docs/*.md`
-- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/weatherlink-kafka-backfill/`, `./services/weatherlink-sql-backfill/`
+- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/weatherlink-sql-backfill/`
 
 ### Common Customizations
 
@@ -254,9 +252,8 @@ kafka:
 - Backfill services are one-shot executables
 
 **Services**:
-- **weatherlink-kafka**: Real-time API → Kafka (streaming daemon)
+- **weatherlink-kafka**: Real-time API → Kafka (streaming daemon, optional backfill mode)
 - **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming daemon)
-- **weatherlink-kafka-backfill**: Historical API → Kafka (one-shot)
 - **weatherlink-sql-backfill**: Historical Kafka → PostgreSQL (one-shot)
 
 ### weatherlink-kafka Service
@@ -279,14 +276,17 @@ weatherlink-kafka/
 │   └── types.go
 ├── util/                # Shared helpers
 │   ├── hash.go
-│   ├── topic.go
-│   └── week.go
+│   ├── time.go
+│   └── topic.go
 ├── service/             # Business logic
-│   ├── service.go       # Orchestration
+│   ├── backfill.go      # Historical backfill
+│   ├── conditions.go    # Current conditions
 │   ├── metadata.go      # Metadata fetching
-│   └── conditions.go    # Current conditions
+│   ├── ratelimit.go     # Backfill rate limiter
+│   ├── scanner.go       # Kafka key scan
+│   └── service.go       # Orchestration
 ├── testdata/            # Sample API payloads
-│   └── api/             # current.json, sensors.json, service-catalog.json
+│   └── api/             # current.json, sensors.json, sensor-catalog.json
 └── Dockerfile
 ```
 
@@ -295,9 +295,10 @@ weatherlink-kafka/
 2. Fetch sensor metadata → catalog → station info on startup and on `METADATA_FETCH_INTERVAL`
 3. Fetch current conditions on `FETCH_INTERVAL`
 4. Deduplicate by Kafka key caches (e.g., `lsid:timestamp` for records, weekly keys for sensor/station metadata)
-5. Publish to Kafka topics
+5. Optionally backfill historical windows when enabled
+6. Publish to Kafka topics
 
-**Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`, `github.com/lib/pq`
+**Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`
 
 ### weatherlink-sql Service
 
@@ -336,7 +337,7 @@ weatherlink-sql/
 4. Enrich tags with units/descriptions from catalog
 5. Track orphaned messages (missing device)
 
-**Dependencies**: `github.com/segmentio/kafka-go`, `github.com/lib/pq`
+**Dependencies**: `github.com/segmentio/kafka-go`, `github.com/jackc/pgx/v5`
 
 ## Kafka Topics
 
@@ -357,6 +358,8 @@ Format: `namespace.category[.subcategory]`
 **weather.health** - Console health metrics
 - Key fields: `battery_voltage`, `wifi_rssi`, `uptime`, `firmware_version`, `free_mem`
 
+**weather.other** - Fallback for unknown categories
+
 ### Metadata Topics (Published every `METADATA_FETCH_INTERVAL`, deduped by key cache)
 
 **weather.metadata.sensors** - Sensor configuration (LSIDs, sensor details)
@@ -365,7 +368,7 @@ Format: `namespace.category[.subcategory]`
 
 ### Message Structure
 
-**Headers** (every message - optimized January 2026):
+**Headers** (data topics):
 - `schema_version` - Schema version (e.g., "1")
 - `lsid` - Logical Sensor ID
 - `timestamp` - Unix timestamp (seconds)
@@ -374,11 +377,9 @@ Format: `namespace.category[.subcategory]`
 
 **Note**: Removed redundant headers (`station_id`, `station_id_uuid`, `category`, `product_name`) for storage optimization. These are available via metadata lookup. See [kafka-standards.md](docs/kafka-standards.md).
 
-**Body** (JSON):
+**Body** (JSON data point):
 ```json
 {
-  "lsid": 555566,
-  "data_structure_type": 1,
   "temp": 62.3,
   "hum": 55.2,
   "wind_speed_last": 5.0,
@@ -529,7 +530,7 @@ docker exec roach-kafka kafka-consumer-groups \
 
 docker exec roach-kafka kafka-consumer-groups \
   --describe \
-  --group weatherlink-sql-data-iss \
+  --group weatherlink-sql-data \
   --bootstrap-server localhost:29092
 ```
 

@@ -11,7 +11,7 @@
 - Check status: `./scripts/status.sh`
 - View logs: `./scripts/logs.sh [service]`
 - Database queries: `./scripts/db/query.sh [command]`
-- Backfill API→Kafka: `./scripts/weatherlink/kafka-backfill.sh --start "date"`
+- Backfill API→Kafka: `./scripts/weatherlink/kafka-backfill.sh` (set `BACKFILL_START_TS` / `BACKFILL_END_TS`)
 - Backfill Kafka→DB: `./scripts/weatherlink/sql-backfill.sh --metadata`
 - Stop system: `./scripts/stop-all.sh`
 
@@ -411,7 +411,7 @@ docker exec roach-kafka kafka-consumer-groups \
 # Describe consumer group (shows lag, offsets)
 docker exec roach-kafka kafka-consumer-groups \
   --describe \
-  --group weatherlink-sql-data-iss \
+  --group weatherlink-sql-data \
   --bootstrap-server localhost:29092
 
 # All groups details
@@ -435,7 +435,7 @@ docker exec roach-kafka kafka-consumer-groups \
 # Reset to latest (skip to current)
 docker exec roach-kafka kafka-consumer-groups \
   --bootstrap-server localhost:29092 \
-  --group weatherlink-sql-data-iss \
+  --group weatherlink-sql-data \
   --reset-offsets \
   --to-latest \
   --all-topics \
@@ -444,7 +444,7 @@ docker exec roach-kafka kafka-consumer-groups \
 # Reset to specific offset
 docker exec roach-kafka kafka-consumer-groups \
   --bootstrap-server localhost:29092 \
-  --group weatherlink-sql-data-iss \
+  --group weatherlink-sql-data \
   --topic weather.iss:0 \
   --reset-offsets \
   --to-offset 1000 \
@@ -611,21 +611,27 @@ find /var/lib/docker/containers/ -name "*-json.log" -exec truncate -s 0 {} \;
 
 **Backfill historical data from WeatherLink API to Kafka:**
 
+The backfill runs inside `weatherlink-kafka` when `KAFKA_BACKFILL_ENABLED=true`.
+Use environment variables to set the time range, then run the helper script.
+
 ```bash
 # Last 24 hours
-./scripts/weatherlink/kafka-backfill.sh --start $(date -v-24H +%s)
+BACKFILL_START_TS=$(date -v-24H +%s) \
+BACKFILL_END_TS=$(date +%s) \
+./scripts/weatherlink/kafka-backfill.sh
 
 # Last 7 days
-./scripts/weatherlink/kafka-backfill.sh --start $(date -v-7d +%s)
+BACKFILL_START_TS=$(date -v-7d +%s) \
+BACKFILL_END_TS=$(date +%s) \
+./scripts/weatherlink/kafka-backfill.sh
 
-# Specific date range (datetime strings)
-./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11 18:20:47" --end "2026-01-12 18:20:47"
-
-# Custom rate limiting and parallelism
-./scripts/weatherlink/kafka-backfill.sh --start "2026-01-11" --requests-per-second 5 --workers 8
+# Specific date range (unix seconds)
+BACKFILL_START_TS=1768780863 \
+BACKFILL_END_TS=1768867263 \
+./scripts/weatherlink/kafka-backfill.sh
 ```
 
-**See [scripts/README.md](../scripts/README.md#weatherlinkkafka-backfillsh) for complete options and examples.**
+**See [scripts/README.md](../scripts/README.md#weatherlinkkafka-backfillsh) for the helper script details.**
 
 ### Kafka to PostgreSQL Backfill
 
@@ -1068,7 +1074,8 @@ sleep 10
 **Backfill testing:**
 ```bash
 # 1. Test API→Kafka backfill
-./scripts/weatherlink/kafka-backfill.sh --start "$(date -v-1H '+%Y-%m-%d %H:%M:%S')"
+BACKFILL_START_TS=$(date -v-1H +%s) BACKFILL_END_TS=$(date +%s) \
+./scripts/weatherlink/kafka-backfill.sh
 
 # 2. Test Kafka→DB backfill
 ./scripts/weatherlink/sql-backfill.sh --topics weather.iss --start-offset -100

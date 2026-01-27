@@ -210,11 +210,11 @@ key := fmt.Sprintf("%d", lsid)  // LSID only, keeps latest per device
 ### 3.2 Data vs Metadata Topics
 
 **Data Topics**: High-frequency sensor readings
-- Published every 5 minutes (configurable)
+- Published on `FETCH_INTERVAL` (configurable)
 - Examples: `weather.iss`, `weather.barometer`
 
 **Metadata Topics**: Low-frequency configuration changes
-- Published only on change detection
+- Published on `METADATA_FETCH_INTERVAL`, deduped by Kafka key cache
 - Examples: `weather.metadata.sensors`, `weather.metadata.catalog`
 
 ### 3.3 Retention Policy
@@ -302,7 +302,7 @@ Move constants to metadata topic, accessed via lookup.
 reader := kafka.NewReader(kafka.ReaderConfig{
     Brokers: []string{"kafka:29092"},
     Topic:   "weather.iss",
-    GroupID: "weatherlink-sql-data-iss",  // Descriptive, includes purpose
+    GroupID: "weatherlink-sql-data",  // Descriptive, includes purpose
 })
 ```
 
@@ -564,16 +564,16 @@ kafka-run-class kafka.tools.DumpLogSegments \
 
 **Diagnosis**:
 ```sql
-SELECT tag_id, timestamp, COUNT(*) 
+SELECT tag_id, ts, COUNT(*) 
 FROM records_numeric 
-GROUP BY tag_id, timestamp 
+GROUP BY tag_id, ts 
 HAVING COUNT(*) > 1;
 ```
 
 **Solutions**:
-- Verify cache rehydration query (LSID vs device_id)
-- Check cache structure (includes data_structure_type?)
-- Add unique constraints on (tag_id, timestamp)
+- Verify Kafka key scan completed successfully at startup
+- Ensure record key format is `lsid:timestamp`
+- Confirm unique constraints on (tag_id, ts)
 
 ### 11.3 Large Message Errors
 
@@ -704,7 +704,7 @@ func (p *Producer) Publish(ctx context.Context, topic, key string,
 reader := kafka.NewReader(kafka.ReaderConfig{
     Brokers:        []string{"kafka:29092"},
     Topic:          "weather.iss",
-    GroupID:        "weatherlink-sql-data-iss",
+    GroupID:        "weatherlink-sql-data",
     MinBytes:       1024,        // 1KB minimum
     MaxBytes:       10485760,    // 10MB maximum
     CommitInterval: time.Second, // Auto-commit frequency

@@ -83,23 +83,20 @@ ZOOKEEPER_TICK_TIME: 2000
 **Goroutine Structure**:
 ```
 main goroutine
+├── Kafka key scan (startup)
+├── Metadata fetch (startup)
+├── Current conditions fetch (startup)
+├── Optional backfill (startup, if enabled)
 ├── Metadata update loop (background)
-│   ├── Fetch sensors (every 24h or on change)
-│   ├── Fetch catalog (every 24h or on change)
-│   └── Fetch station (every 24h or on change)
 └── Main fetch loop (foreground)
-    └── Fetch current conditions (every 5m)
-        ├── Check timestamp cache (deduplicate)
-        ├── Publish to 4 data topics
-        └── Update cache
 ```
 
 **Deduplication Strategy**:
-1. In-memory timestamp cache (last 5 minutes)
-2. PostgreSQL rehydration on startup (last 24 hours) - queries records tables via JOIN with tags
-3. Cache stores: `map[int64]map[int]time.Time` (LSID → data_structure_type → timestamp)
+1. Kafka key scan at startup to hydrate record key cache (`lsid:timestamp`)
+2. Kafka key scan for metadata topics to avoid re-publishing identical metadata keys
+3. In-memory caches updated after successful publish
 
-**API Authentication**: HMAC-SHA256 signature generation per WeatherLink v2 spec
+**API Authentication**: `X-Api-Secret` header + `api-key` query parameter
 
 **Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types, then publishes each sensor type as a separate message (avoids Kafka size limits, enables incremental consumer processing)
 
@@ -108,10 +105,7 @@ main goroutine
 **Consumer Groups**:
 - `weatherlink-sql-metadata` - Consumes `weather.metadata.sensors`
 - `weatherlink-sql-catalog` - Consumes `weather.metadata.catalog`
-- `weatherlink-sql-data-iss` - Consumes `weather.iss`
-- `weatherlink-sql-data-barometer` - Consumes `weather.barometer`
-- `weatherlink-sql-data-indoor` - Consumes `weather.indoor`
-- `weatherlink-sql-data-health` - Consumes `weather.health`
+- `weatherlink-sql-data` - Consumes `weather.*` data topics (discovered at startup)
 
 **Processing Flow**:
 ```
@@ -126,7 +120,7 @@ Message arrives
     │   ├── If found: Use existing tag
     │   └── If not found: Create tag with catalog enrichment
     ├── Determine data type (numeric, text, null)
-    └── Insert to appropriate records_* table
+    └── Add to batch writer (numeric/text/null buffers)
 ```
 
 **Cache Management**:
@@ -149,7 +143,7 @@ Message arrives
 | From | To | Address | Protocol | Purpose |
 |------|----|---------| ---------|---------|
 | weatherlink-kafka | Kafka | kafka:29092 | PLAINTEXT | Publish messages |
-| weatherlink-kafka | PostgreSQL | postgres:5432 | TCP | Cache rehydration |
+| weatherlink-kafka | PostgreSQL | postgres:5432 | TCP | Optional connection (currently unused) |
 | weatherlink-sql | Kafka | kafka:29092 | PLAINTEXT | Consume messages |
 | weatherlink-sql | PostgreSQL | postgres:5432 | TCP | Materialize data |
 | kafka-ui | Kafka | kafka:29092 | PLAINTEXT | Monitoring |
@@ -296,12 +290,12 @@ Use migration framework:
 1. WeatherLink API (HTTPS)
    ↓
    GET /v2/current/{station_id} (every 5m)
-   GET /v2/sensors/{station_id} (on change)
-   GET /v2/sensor-catalog (on change)
+   GET /v2/sensors (on METADATA_FETCH_INTERVAL)
+   GET /v2/sensor-catalog (on METADATA_FETCH_INTERVAL)
    
 2. weatherlink-kafka
    ↓
-   Deduplicate (timestamp cache)
+   Deduplicate (Kafka key cache)
    Parse response
    Split by sensor category
    ↓
@@ -330,8 +324,8 @@ Use migration framework:
 ```
 1. API: Sensors/Catalog/Station
    ↓
-2. weatherlink-kafka: Hash comparison
-   ↓ (only if changed)
+2. weatherlink-kafka: Key-based deduplication
+   ↓ (only if new key)
 3. Kafka: Metadata topics
    ↓
 4. weatherlink-sql: Upsert to DB + cache

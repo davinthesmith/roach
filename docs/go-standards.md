@@ -508,16 +508,19 @@ weatherlink-kafka/
 ├── models/              # API response structures
 ├── api/                 # WeatherLink API client
 │   ├── client.go        # HTTP client wrapper
-│   ├── auth.go          # HMAC-SHA256 authentication
 │   └── weatherlink.go   # Endpoint methods
 ├── kafka/               # Kafka producer
 ├── service/             # Business logic
 │   ├── service.go       # Orchestration and main loop
-│   ├── metadata.go      # Metadata fetching with change detection
+│   ├── metadata.go      # Metadata fetching
 │   ├── conditions.go    # Current conditions fetching
-│   └── cache.go         # Deduplication cache
-└── internal/
-    └── hash.go          # SHA-256 utility
+│   ├── backfill.go      # Historical backfill
+│   ├── ratelimit.go     # Backfill rate limiter
+│   └── scanner.go       # Kafka key scan
+└── util/
+    ├── hash.go          # SHA-256 utility
+    ├── time.go          # Time helpers
+    └── topic.go         # Topic routing
 ```
 
 ### weatherlink-sql (Consumer Pattern)

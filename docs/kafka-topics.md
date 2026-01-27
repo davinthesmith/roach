@@ -8,7 +8,7 @@ Format: `namespace.category[.subcategory]`
 ### Current Topics
 
 #### Weather Data Topics
-Published every 5 minutes (configurable)
+Published on `FETCH_INTERVAL` (configurable)
 
 ##### weather.iss
 **Integrated Sensor Suite** - Outdoor weather station
@@ -66,15 +66,18 @@ Fields:
 - `queue_kilobytes` - Queue size (KB)
 - `internal_free_mem` - Internal free memory (bytes)
 
+##### weather.other
+**Fallback** - Unknown or unmapped categories
+
 #### Metadata Topics
-Published only when changes detected (hash-based comparison)
+Published on `METADATA_FETCH_INTERVAL`, deduped by Kafka key cache
 
 ##### weather.metadata.sensors
 **Sensor Configuration**
 
 Contains: Individual sensor details, LSIDs, configurations
 
-Published: On change or first run
+Key format: `lsid:weekStart`
 
 ##### weather.metadata.catalog
 **Sensor Type Catalog**
@@ -83,16 +86,16 @@ Contains: Data structure definitions, field schemas for sensor types
 
 Published: On change or first run
 
-**Message Structure**: As of January 2026, catalog is published as multiple messages (one per sensor type) instead of a single large message. This avoids Kafka size limits and allows incremental processing.
+**Message Structure**: Catalog is published as multiple messages (one per sensor type) instead of a single large message. This avoids Kafka size limits and allows incremental processing.
 
-Message key format: `sensor_type:{sensor_type_id}`
+Message key format: `sensor_type:max_data_structure_type`
 
 ##### weather.metadata.station
 **Station Information**
 
 Contains: Station name, location, timezone, registration details
 
-Published: On change or first run
+Key format: `station_id:weekStart`
 
 ## Message Structure
 
@@ -101,7 +104,7 @@ All messages are JSON with Kafka headers
 
 ### Headers
 
-**Current (Optimized - January 2026)**:
+**Data topics (optimized)**:
 - `schema_version` - Schema version (string, e.g., "1")
 - `lsid` - Logical Sensor ID (integer)
 - `timestamp` - Unix timestamp in seconds (integer)
@@ -119,8 +122,6 @@ See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
 ### Body Example (weather.iss)
 ```json
 {
-  "lsid": 555566,
-  "data_structure_type": 1,
   "txid": 1,
   "temp": 62.3,
   "hum": 55.2,
