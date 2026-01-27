@@ -16,6 +16,10 @@ services:
       - FETCH_INTERVAL=1m
       - METADATA_FETCH_INTERVAL=168h # 7 days
       - LOG_LEVEL=info
+      - KAFKA_BACKFILL_ENABLED=${KAFKA_BACKFILL_ENABLED}
+      - BACKFILL_REQUEST_PER_SECOND=8
+      - BACKFILL_PARALLEL_WORKERS=4
+      - BACKFILL_START_TS=1768061500
     depends_on:
       kafka:
         condition: service_healthy

@@ -31,7 +31,7 @@ func (s *Service) fetchCurrentConditions(ctx context.Context) error {
 
 	for _, sensor := range response.Sensors {
 		// Get sensor metadata
-		metadata, exists := s.sensorMetadata[sensor.LSID]
+		metadata, exists := s.sensorMap[sensor.LSID]
 		if !exists {
 			log.Printf("Warning: No metadata found for sensor %d, skipping", sensor.LSID)
 			continue

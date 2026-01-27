@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -19,28 +20,21 @@ import (
 func main() {
 	log.Println("Starting ROACH Weather Service...")
 
-	// Load configuration
 	cfg := config.Load()
-
-	// Validate configuration
-	if cfg.WeatherLinkAPIKey == "" {
-		log.Fatal("WEATHERLINK_API_KEY is required")
-	}
-	if cfg.WeatherLinkAPISecret == "" {
-		log.Fatal("WEATHERLINK_API_SECRET is required")
-	}
-	if cfg.WeatherLinkStationID == "" {
-		log.Fatal("WEATHERLINK_STATION_ID is required")
-	}
-	if cfg.KafkaBroker == "" {
-		log.Fatal("KAFKA_BROKER is required")
-	}
 
 	log.Printf("Configuration loaded:")
 	log.Printf("  - Station ID: %s", cfg.WeatherLinkStationID)
 	log.Printf("  - Kafka Broker: %s", cfg.KafkaBroker)
 	log.Printf("  - Fetch Interval: %s", cfg.FetchInterval)
 	log.Printf("  - Metadata Fetch Interval: %s", cfg.MetadataFetchInterval)
+	log.Printf("  - Backfill: %t", cfg.BackfillEnabled)
+
+	// log backfill time range if backfill is enabled
+	if cfg.BackfillEnabled {
+		log.Printf("  - Backfill Time Range: %s to %s",
+			time.Unix(cfg.BackfillStartTs, 0).Format("2006-01-02 15:04:05"),
+			time.Unix(cfg.BackfillEndTs, 0).Format("2006-01-02 15:04:05"))
+	}
 
 	// Create API client
 	apiClient := api.NewClient(cfg.WeatherLinkAPIKey, cfg.WeatherLinkAPISecret, cfg.WeatherLinkStationID)

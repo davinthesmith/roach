@@ -7,14 +7,19 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	WeatherLinkAPIKey     string
-	WeatherLinkAPISecret  string
-	WeatherLinkStationID  string
-	KafkaBroker           string
-	PostgresDSN           string
-	FetchInterval         time.Duration
-	MetadataFetchInterval time.Duration
-	LogLevel              string
+	WeatherLinkAPIKey        string
+	WeatherLinkAPISecret     string
+	WeatherLinkStationID     string
+	KafkaBroker              string
+	PostgresDSN              string
+	FetchInterval            time.Duration
+	MetadataFetchInterval    time.Duration
+	LogLevel                 string
+	BackfillEnabled          bool
+	BackfillStartTs          int64
+	BackfillEndTs            int64
+	BackfillRequestPerSecond int
+	BackfillParallelWorkers  int
 }
 
 // CurrentConditionsResponse represents the response from the current conditions API
@@ -103,4 +108,10 @@ type DataStructure struct {
 type FieldDefinition struct {
 	Type  string `json:"type"`
 	Units string `json:"units"`
+}
+
+// TimeWindow represents a 24-hour time window
+type TimeWindow struct {
+	Start int64
+	End   int64
 }

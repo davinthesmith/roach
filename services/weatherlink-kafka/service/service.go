@@ -18,7 +18,8 @@ type Service struct {
 	apiClient            *api.Client
 	producer             *kafka.Producer
 	db                   *sql.DB
-	sensorMetadata       map[int]*models.SensorMetadata // by lsid
+	rateLimiter          *RateLimiter
+	sensorMap            map[int]*models.SensorMetadata // by lsid
 	sensorTypes          map[int]struct{}
 	existingRecordKeys   map[string]struct{} // lsid:timestamp keys scanned from Kafka
 	recordKeysMutex      sync.RWMutex
@@ -33,7 +34,8 @@ func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db 
 		apiClient:            apiClient,
 		producer:             producer,
 		db:                   db,
-		sensorMetadata:       make(map[int]*models.SensorMetadata),
+		rateLimiter:          NewRateLimiter(cfg.BackfillRequestPerSecond, 1000),
+		sensorMap:            make(map[int]*models.SensorMetadata),
 		sensorTypes:          make(map[int]struct{}),
 		existingRecordKeys:   make(map[string]struct{}),
 		existingMetadataKeys: make(map[string]struct{}),
@@ -43,7 +45,7 @@ func New(cfg models.Config, apiClient *api.Client, producer *kafka.Producer, db 
 // Start starts the weather service
 func (s *Service) Start(ctx context.Context) error {
 	// Scan Kafka for existing keys to prevent duplicates across restarts.
-	if err := s.scanExistingKeys(ctx, []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health", "weather.other"}, s.existingRecordKeys, &s.recordKeysMutex); err != nil {
+	if err := s.scanExistingKeys(ctx, []string{"weather.iss", "weather.barometer", "weather.indoor", "weather.health"}, s.existingRecordKeys, &s.recordKeysMutex); err != nil {
 		log.Printf("Warning: Failed to scan Kafka for existing keys: %v", err)
 	}
 
@@ -51,14 +53,18 @@ func (s *Service) Start(ctx context.Context) error {
 		log.Printf("Warning: Failed to scan Kafka metadata keys: %v", err)
 	}
 
-	// Fetch metadata before starting loop
+	// init metadata
 	s.fetchAllMetadata(ctx)
+
+	// init current conditions
+	s.fetchAllCurrentConditions(ctx)
+
+	if s.config.BackfillEnabled {
+		s.StartBackfill(ctx)
+	}
 
 	// Start background goroutine for periodic metadata updates
 	go s.metadataUpdateLoop(ctx)
-
-	// Fetch current conditions before loop
-	s.fetchAllCurrentConditions(ctx)
 
 	// Start main loop for current conditions
 	return s.currentConditionsUpdateLoop(ctx)

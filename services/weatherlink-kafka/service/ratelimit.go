@@ -24,6 +24,7 @@ type RateLimiter struct {
 	
 	// Backoff state
 	consecutiveErrors int
+	blockedUntil      time.Time
 }
 
 // NewRateLimiter creates a new rate limiter
@@ -48,68 +49,64 @@ func NewRateLimiter(tokensPerSecond int, hourlyLimit int) *RateLimiter {
 		hourlyRequests:    0,
 		hourStart:         time.Now(),
 		consecutiveErrors: 0,
+		blockedUntil:      time.Time{},
 	}
 }
 
 // Wait blocks until a token is available
 func (r *RateLimiter) Wait(ctx context.Context) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	
-	// Reset hourly counter if hour has passed
-	if time.Since(r.hourStart) >= time.Hour {
-		log.Printf("Hourly rate limit reset: %d requests in last hour", r.hourlyRequests)
-		r.hourlyRequests = 0
-		r.hourStart = time.Now()
-	}
-	
-	// Check hourly limit (leave 10% buffer)
-	if r.hourlyRequests >= int(float64(r.hourlyLimit)*0.9) {
-		sleepTime := time.Until(r.hourStart.Add(time.Hour))
-		log.Printf("Approaching hourly limit (%d/%d), sleeping for %s", 
-			r.hourlyRequests, r.hourlyLimit, sleepTime)
-		
-		r.mutex.Unlock()
-		select {
-		case <-time.After(sleepTime):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	for {
 		r.mutex.Lock()
-	}
-	
-	// Refill tokens based on time elapsed
-	now := time.Now()
-	elapsed := now.Sub(r.lastRefill)
-	tokensToAdd := float64(r.tokensPerSecond) * elapsed.Seconds()
-	r.tokens = minFloat64(r.tokens+tokensToAdd, float64(r.burstSize))
-	r.lastRefill = now
-	
-	// Wait until we have at least 1 token
-	for r.tokens < 1.0 {
-		// Calculate how long until we have a token
-		timeToWait := time.Duration(float64(time.Second) / float64(r.tokensPerSecond))
-		
-		r.mutex.Unlock()
-		select {
-		case <-time.After(timeToWait):
-		case <-ctx.Done():
-			return ctx.Err()
+		now := time.Now()
+
+		// Respect global backoff if any worker hit rate limits.
+		if !r.blockedUntil.IsZero() && now.Before(r.blockedUntil) {
+			sleepTime := time.Until(r.blockedUntil)
+			r.mutex.Unlock()
+			if err := sleepWithContext(ctx, sleepTime); err != nil {
+				return err
+			}
+			continue
 		}
-		r.mutex.Lock()
-		
-		// Refill again after waiting
-		now = time.Now()
-		elapsed = now.Sub(r.lastRefill)
-		tokensToAdd = float64(r.tokensPerSecond) * elapsed.Seconds()
+
+		// Reset hourly counter if hour has passed.
+		if now.Sub(r.hourStart) >= time.Hour {
+			log.Printf("Hourly rate limit reset: %d requests in last hour", r.hourlyRequests)
+			r.hourlyRequests = 0
+			r.hourStart = now
+		}
+
+		// Check hourly limit (leave 10% buffer).
+		if r.hourlyRequests >= int(float64(r.hourlyLimit)*0.9) {
+			sleepTime := time.Until(r.hourStart.Add(time.Hour))
+			log.Printf("Approaching hourly limit (%d/%d), sleeping for %s",
+				r.hourlyRequests, r.hourlyLimit, sleepTime)
+			r.mutex.Unlock()
+			if err := sleepWithContext(ctx, sleepTime); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Refill tokens based on time elapsed.
+		elapsed := now.Sub(r.lastRefill)
+		tokensToAdd := float64(r.tokensPerSecond) * elapsed.Seconds()
 		r.tokens = minFloat64(r.tokens+tokensToAdd, float64(r.burstSize))
 		r.lastRefill = now
+
+		if r.tokens >= 1.0 {
+			r.tokens -= 1.0
+			r.mutex.Unlock()
+			return nil
+		}
+
+		// Calculate how long until we have a token.
+		timeToWait := time.Duration(float64(time.Second) / float64(r.tokensPerSecond))
+		r.mutex.Unlock()
+		if err := sleepWithContext(ctx, timeToWait); err != nil {
+			return err
+		}
 	}
-	
-	// Consume one token
-	r.tokens -= 1.0
-	
-	return nil
 }
 
 // RecordRequest records a successful request
@@ -139,6 +136,10 @@ func (r *RateLimiter) RecordError(statusCode int) time.Duration {
 		
 		// Exponential backoff: 1s, 2s, 4s, 8s, capped at 8s
 		backoff := time.Second * time.Duration(1<<min(r.consecutiveErrors-1, 3))
+		blockUntil := time.Now().Add(backoff)
+		if blockUntil.After(r.blockedUntil) {
+			r.blockedUntil = blockUntil
+		}
 		
 		log.Printf("Rate limit error (429), backing off for %s (error #%d)", 
 			backoff, r.consecutiveErrors)
@@ -170,6 +171,20 @@ func minFloat64(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // min returns the minimum of two values

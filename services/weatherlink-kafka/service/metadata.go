@@ -40,7 +40,7 @@ func (s *Service) fetchSensorMetadata(ctx context.Context) error {
 	// Update sensor map AND dynamically track sensor types from API
 	for i := range response.Sensors {
 		sensor := &response.Sensors[i]
-		s.sensorMetadata[sensor.LSID] = sensor
+		s.sensorMap[sensor.LSID] = sensor
 		s.sensorTypes[sensor.SensorType] = struct{}{}
 
 		// Generate unique key for sensor metadata: {lsid}:{weekStart}
