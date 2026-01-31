@@ -17,6 +17,8 @@ services:
     environment:
       - ZOOKEEPER_CLIENT_PORT=2181
       - ZOOKEEPER_TICK_TIME=2000
+      - ZOOKEEPER_AUTOPURGE_SNAP_RETAIN_COUNT=3
+      - ZOOKEEPER_AUTOPURGE_PURGE_INTERVAL=36
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
