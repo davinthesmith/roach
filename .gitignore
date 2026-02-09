@@ -26,9 +26,3 @@ go.work
 # OS files
 .DS_Store
 Thumbs.db
-
-# Docker
-docker-compose.override.yml
-
-# Postman
-*postman_environment.json
