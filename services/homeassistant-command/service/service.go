@@ -107,7 +107,8 @@ func (s *Service) executeWithReconnect(ctx context.Context, cmd models.Command) 
 }
 
 // keepAlive sends periodic pings to Home Assistant to keep the WebSocket
-// connection alive during idle periods.
+// connection alive during idle periods. If a ping fails, it automatically
+// reconnects so the service stays healthy between commands.
 func (s *Service) keepAlive(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -121,8 +122,11 @@ func (s *Service) keepAlive(ctx context.Context) {
 				continue
 			}
 			if err := s.haClient.Ping(ctx); err != nil {
-				log.Printf("Keepalive ping failed: %v", err)
-				// Don't reconnect here — the next command will trigger reconnect
+				log.Printf("Keepalive ping failed: %v — reconnecting", err)
+				s.haClient.ClearConnection()
+				if err := s.haClient.ConnectWithRetry(ctx); err != nil {
+					log.Printf("Keepalive reconnect failed: %v", err)
+				}
 			}
 		}
 	}
