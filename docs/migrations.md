@@ -1,65 +1,40 @@
 # Database Migrations
 
-## Framework
+> **Overview**: [CLAUDE.md](../CLAUDE.md). **Ops**: [operations.md](operations.md). This doc: migration framework and usage.
 
-**Location**: `scripts/db/migrate.sh`
-**Tracking**: `schema_migrations` table
+**Tool**: `scripts/db/migrate.sh`  
+**Tracking**: `schema_migrations` table (version, name, applied_at, checksum)
 
 ## Commands
 
 ```bash
-./scripts/db/migrate.sh status  # Show applied/pending migrations
-./scripts/db/migrate.sh up      # Apply pending migrations
-./scripts/db/migrate.sh down    # Rollback last migration (prompts confirmation)
-./scripts/db/migrate.sh create <name>  # Generate new migration files
+./scripts/db/migrate.sh status           # Applied vs pending
+./scripts/db/migrate.sh up               # Apply pending
+./scripts/db/migrate.sh down             # Rollback last (prompts)
+./scripts/db/migrate.sh create <name>    # Create NNN_<name>.up.sql and .down.sql
 ```
 
-## Migration Files
+## Files
 
-**Location**: `scripts/db/migrations/`
-**Naming**: `NNN_description.{up,down}.sql`
+**Location**: `scripts/db/migrations/`  
+**Naming**: `NNN_description.up.sql`, `NNN_description.down.sql` (e.g. `001_add_orphaned_messages.up.sql`).
 
-Example:
-- `001_enhance_tag_and_device_metadata.up.sql` - Forward migration
-- `001_enhance_tag_and_device_metadata.down.sql` - Rollback migration
+**Rules**: `.up.sql` = apply; `.down.sql` = revert. Use `IF EXISTS`/`IF NOT EXISTS` for idempotency. Test rollback before committing.
 
-## Creating Migrations
+## Create workflow
 
 ```bash
 ./scripts/db/migrate.sh create add_feature
-# Creates:
-# - scripts/db/migrations/002_add_feature.up.sql
-# - scripts/db/migrations/002_add_feature.down.sql
+# Edits: scripts/db/migrations/NNN_add_feature.up.sql and .down.sql
+./scripts/db/migrate.sh up
 ```
-
-Edit files with SQL:
-- `.up.sql` - Apply changes
-- `.down.sql` - Revert changes
-
-Use `IF EXISTS`/`IF NOT EXISTS` for idempotency.
-
-## Tracking
-
-`schema_migrations` table stores:
-- `version` - Migration filename
-- `name` - Human-readable name
-- `applied_at` - Timestamp
-- `checksum` - MD5 of migration file
 
 ## Verification
 
 ```sql
--- Check migration status
 SELECT * FROM schema_migrations ORDER BY applied_at;
-
--- Verify schema
 \d devices
-\d sensor_catalog
 \d tags
-
--- Check catalog population
 SELECT COUNT(*) FROM sensor_catalog;
-
--- View enriched tags
 SELECT tag_name, unit, description FROM tags WHERE unit IS NOT NULL LIMIT 5;
 ```

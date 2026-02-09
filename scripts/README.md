@@ -943,7 +943,7 @@ All scripts respect environment variables from `.env` file. Key variables:
 
 ## Related Documentation
 
-- **[AI-CONTEXT.md](../docs/AI-CONTEXT.md)** - Single-file overview (start here)
+- **[CLAUDE.md](../CLAUDE.md)** - Single-file overview (start here)
 - **[operations.md](../docs/operations.md)** - Advanced operations and maintenance
 - **[troubleshooting.md](../docs/troubleshooting.md)** - Problem solving guide
 - **[architecture.md](../docs/architecture.md)** - System design details

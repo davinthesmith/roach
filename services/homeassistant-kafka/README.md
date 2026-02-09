@@ -1,102 +1,68 @@
-# Home Assistant Kafka Service
+# homeassistant-kafka
 
-Streams Home Assistant `state_changed` events and publishes Ecobee-related updates to Kafka.
+Streams Home Assistant `state_changed` events to Kafka. Connects via WebSocket (or optional REST poll fallback). Filters Ecobee entities; publishes full HA event payloads to topic-per-type.
 
-## Overview
-
-This service:
-- Connects to Home Assistant via WebSocket
-- Subscribes to `state_changed` events
-- Filters for Ecobee entities
-- Publishes full HA event payloads to Kafka topics
-- Optionally polls the REST API as a fallback
-
-## Topics Published
-
-- `homeassistant.ecobee.thermostat.climate` — climate entities (thermostat state)
-- `homeassistant.ecobee.weather` — weather domain entities (forecast data)
-- `homeassistant.ecobee.sensor.temperature` — temperature sensors
-- `homeassistant.ecobee.sensor.humidity` — humidity sensors
-- `homeassistant.ecobee.sensor.presence` — occupancy/presence binary sensors
-- `homeassistant.ecobee.sensor.battery` — battery sensors (if available)
-- `homeassistant.ecobee.other` — fallback for unclassified entities
-
-### Message Key Format
-
-Keys use a friendly device name with a Unix timestamp:
+## Architecture
 
 ```
-{friendly_name}:{timestamp}
+Home Assistant (WebSocket or REST) → homeassistant-kafka → Kafka
+         ↓                                    ↓
+   state_changed events              Topic by entity domain/type
+   Entity filter: ecobee (or POLL_ENTITY_FILTER)
 ```
 
-The friendly name is derived from the entity ID by stripping the HA domain prefix
-and any sensor-type suffix that is redundant with the topic. Examples:
+**Flow**: Load config → Validate HA_URL, HA_TOKEN, KAFKA_BROKER, HA_WS_URL (derived from HA_URL if unset) → Discover Ecobee entities from HA entity registry (unless POLL_ENTITY_FILTER set) → Subscribe to state_changed (WebSocket) or poll loop (REST) → On event, filter Ecobee → Route to topic → Publish with key `{friendly_name}:{timestamp}`.
 
-| Entity ID | Topic | Key |
-|---|---|---|
-| `climate.sneaux` | `thermostat.climate` | `sneaux:1706140800` |
-| `weather.sneaux` | `weather` | `sneaux:1706140800` |
-| `sensor.sneaux_humidity` | `sensor.humidity` | `sneaux:1706140800` |
-| `sensor.jadyn_s_room_temperature` | `sensor.temperature` | `jadyn_s_room:1706140800` |
-| `binary_sensor.kitchen_occupancy` | `sensor.presence` | `kitchen:1706140800` |
+## Topics
+
+| Topic | Entity type |
+|-------|-------------|
+| `homeassistant.ecobee.thermostat.climate` | climate |
+| `homeassistant.ecobee.weather` | weather |
+| `homeassistant.ecobee.sensor.temperature` | sensor (temperature) |
+| `homeassistant.ecobee.sensor.humidity` | sensor (humidity) |
+| `homeassistant.ecobee.sensor.presence` | binary_sensor (occupancy/presence) |
+| `homeassistant.ecobee.sensor.battery` | sensor (battery) |
+| `homeassistant.ecobee.other` | fallback |
+
+**Key**: `{friendly_name}:{unix_timestamp}`. Friendly name = entity_id minus domain and topic-redundant suffix (e.g. `_temperature`, `_humidity`).
 
 ## Configuration
 
-Environment variables:
+**Required**:
 
 ```bash
-# Required
 HA_URL=http://homeassistant:8123
 HA_TOKEN=your_long_lived_access_token
 KAFKA_BROKER=kafka:29092
+```
 
-# Optional
-HA_WS_URL=ws://homeassistant:8123/api/websocket  # Override derived URL
-WS_RECONNECT_BACKOFF=1s,5s,30s                   # Reconnect delays
-POLL_ENABLED=false                               # REST polling fallback
-POLL_INTERVAL=60s                                # Poll interval
-POLL_ENTITY_FILTER=climate.ecobee,sensor.ecobee_temp
+**Optional**:
+
+```bash
+HA_WS_URL=ws://homeassistant:8123/api/websocket   # Default: derived from HA_URL (http→ws, https→wss)
+WS_RECONNECT_BACKOFF=1s,5s,30s
+POLL_ENABLED=false                                # Use REST polling instead of WebSocket
+POLL_INTERVAL=60s
+POLL_ENTITY_FILTER=climate.ecobee,sensor.ecobee_temp   # Exact entity_ids only (overrides discovery)
 LOG_LEVEL=info
 ```
 
-### Entity Filtering
-
-By default, only entities with `ecobee` in their entity_id are published. If `POLL_ENTITY_FILTER`
-contains a comma-separated list, only those exact entity_ids are allowed.
+**Entity filtering**: If POLL_ENTITY_FILTER is set, only those entity_ids are published. Otherwise, entities are discovered from HA entity registry (search "ecobee") or fallback: entity_id contains "ecobee".
 
 ## Message Format
 
-**Headers**:
-- `schema_version`
-- `entity_id`
-- `domain`
-- `timestamp`
-- `source`
-- `event_type`
+**Headers**: `schema_version`, `entity_id`, `domain`, `timestamp`, `source`, `event_type`.  
+**Body**: Full HA event JSON.
 
-**Body**:
-- Full Home Assistant event payload (JSON)
-
-## Running Locally
-
-### With Docker Compose (Recommended)
+## Run
 
 ```bash
-# From project root
+# From repo root
 docker compose up homeassistant-kafka
-```
 
-### Standalone with Go
-
-```bash
+# Standalone
 cd services/homeassistant-kafka
-
-go mod download
-
-export HA_URL=http://localhost:8123
-export HA_TOKEN=your_token
-export KAFKA_BROKER=localhost:9092
-
-# Run
+export HA_URL=http://localhost:8123 HA_TOKEN=... KAFKA_BROKER=localhost:9092
 go run main.go
 ```

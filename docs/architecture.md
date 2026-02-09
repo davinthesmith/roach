@@ -1,355 +1,93 @@
 # Architecture
 
-> **For basics, see [AI-CONTEXT.md](AI-CONTEXT.md)**. This document covers detailed specifications and advanced architecture topics.
+> **Basics**: [CLAUDE.md](../CLAUDE.md). This doc: component specs, network, resources, extension.
 
-## Component Specifications
+## Components
 
 ### Kafka Broker
-
 **Image**: `confluentinc/cp-kafka:7.5.0`
 
-**Listeners**:
-```yaml
-KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-```
+| Area | Settings |
+|------|----------|
+| Listeners | PLAINTEXT 0.0.0.0:29092 (internal), 0.0.0.0:9092 (host); advertised `kafka:29092`, `localhost:9092` |
+| Retention | `KAFKA_LOG_RETENTION_MS=-1`, `KAFKA_LOG_RETENTION_BYTES=-1`, `KAFKA_LOG_DIRS=/var/lib/kafka/data` |
+| Performance | `KAFKA_NUM_NETWORK_THREADS=3`, `KAFKA_NUM_IO_THREADS=8`, socket buffers 102400, request max 104857600, `KAFKA_AUTO_CREATE_TOPICS_ENABLE=true` |
 
-**Retention**:
-```yaml
-KAFKA_LOG_RETENTION_MS: -1       # Infinite retention
-KAFKA_LOG_RETENTION_BYTES: -1    # No size limit
-KAFKA_LOG_DIRS: /var/lib/kafka/data  # Ensures persistence
-```
-
-**Performance**:
-```yaml
-KAFKA_NUM_NETWORK_THREADS: 3
-KAFKA_NUM_IO_THREADS: 8
-KAFKA_SOCKET_SEND_BUFFER_BYTES: 102400
-KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
-KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600
-KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-```
-
-**Health Check**: `kafka-broker-api-versions --bootstrap-server localhost:29092`
+**Health**: `kafka-broker-api-versions --bootstrap-server localhost:29092`
 
 ### PostgreSQL
+**Image**: `postgres:16-alpine`. DB: `roach`, user: `roach`. Init: `scripts/db/init/01-schema.sql`.
 
-**Image**: `postgres:16-alpine`
-**Database**: `roach`, **User**: `roach`
-**Init Script**: `scripts/db/init/01-schema.sql` (auto-run on first start)
+**Tables**: `devices` (lsid, metadata JSONB), `tags` (device_id, tag_name, unit, description), `sensor_catalog` (sensor_type, data_structure_type, field_name), `records_numeric`/`records_text`/`records_null` (tag_id, ts), `records` view, `orphaned_messages`, `schema_migrations`.
 
-**Schema Tables**:
-- `devices` - 20+ columns including parent device, location, metadata JSONB
-- `tags` - Unique on (device_id, tag_name), includes unit/description
-- `sensor_catalog` - Field metadata indexed by (sensor_type, data_structure_type, field_name)
-- `records_numeric`, `records_text`, `records_null` - Optimized time-series storage with composite primary keys (tag_id, ts)
-- `records` (view) - Unified interface, JOIN with tags for device_id
-- `orphaned_messages` - Failed processing tracking
-- `schema_migrations` - Migration version tracking
-
-**Indexes**:
-- `idx_devices_lsid` on `devices(lsid)`
-- `idx_devices_active` on `devices(active)`
-- `idx_devices_rt_data_structure_type` on `devices(rt_data_structure_type)`
-- `idx_tags_device_tag` on `tags(device_id, tag_name)` (unique)
-- `idx_sensor_catalog_lookup` on `sensor_catalog(sensor_type, data_structure_type, field_name)` (unique)
-- `idx_records_numeric_tag_ts` on `records_numeric(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
-- `idx_records_text_tag_ts` on `records_text(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
-- `idx_records_null_tag_ts` on `records_null(tag_id, ts DESC)` (with PRIMARY KEY on (tag_id, ts))
+**Indexes**: Unique on `devices(lsid)`, `tags(device_id, tag_name)`, `sensor_catalog(sensor_type, data_structure_type, field_name)`; (tag_id, ts DESC) on each records_* table.
 
 ### Zookeeper
-
-**Image**: `confluentinc/cp-zookeeper:7.5.0`
-**Configuration**:
-```yaml
-ZOOKEEPER_CLIENT_PORT: 2181
-ZOOKEEPER_TICK_TIME: 2000
-```
-**Purpose**: Kafka cluster coordination only
+**Image**: `confluentinc/cp-zookeeper:7.5.0`. Port 2181. Kafka coordination only.
 
 ### Kafka UI
+**Image**: `provectuslabs/kafka-ui:latest`. Connects to `kafka:29092`. Browse topics, messages, consumer groups.
 
-**Image**: `provectuslabs/kafka-ui:latest`
-**Configuration**: Connects to `kafka:29092` via Docker network
-**Features**: Browse topics, messages, consumer groups, broker health
+## Service Details
 
-## Service Implementation Details
+### weatherlink-kafka
+- **Flow**: Startup key scan → metadata fetch → current conditions → optional backfill; then metadata loop (interval) + fetch loop (foreground).
+- **Dedup**: Kafka key scan at startup (record keys `lsid:timestamp`, metadata keys); in-memory cache updated after publish.
+- **API**: `X-Api-Secret` + `api-key` query. Catalog filtered to active sensor types from `/v2/sensors`; one message per sensor type.
 
-### weatherlink-kafka Architecture
+### weatherlink-sql
+- **Consumer groups**: `weatherlink-sql-metadata` (sensors), `weatherlink-sql-catalog` (catalog), `weatherlink-sql-data` (weather.* data, discovered at startup).
+- **Flow**: Headers → device lookup (or orphan) → parse JSON → per field: tag lookup/create (catalog enrichment) → batch writer (numeric/text/null).
+- **Caches**: Device (LSID→Device), Tag (device_id:tag_name→Tag), Catalog (sensor_type:data_structure_type:field_name→FieldMetadata); thread-safe.
 
-**Goroutine Structure**:
-```
-main goroutine
-├── Kafka key scan (startup)
-├── Metadata fetch (startup)
-├── Current conditions fetch (startup)
-├── Optional backfill (startup, if enabled)
-├── Metadata update loop (background)
-└── Main fetch loop (foreground)
-```
+## Network
 
-**Deduplication Strategy**:
-1. Kafka key scan at startup to hydrate record key cache (`lsid:timestamp`)
-2. Kafka key scan for metadata topics to avoid re-publishing identical metadata keys
-3. In-memory caches updated after successful publish
+| From | To | Address | Purpose |
+|------|----|---------|---------|
+| weatherlink-kafka | Kafka | kafka:29092 | Publish |
+| weatherlink-sql | Kafka | kafka:29092 | Consume |
+| weatherlink-sql | PostgreSQL | postgres:5432 | Materialize |
+| kafka-ui | Kafka | kafka:29092 | Monitor |
+| Kafka | Zookeeper | zookeeper:2181 | Coordination |
+| Host | Kafka / PG / UI | localhost:9092, 5432, 8080 | External access |
 
-**API Authentication**: `X-Api-Secret` header + `api-key` query parameter
+**Network**: `roach-network` (bridge). DNS: container names.
 
-**Catalog Filtering**: Dynamically discovers sensor types from `/v2/sensors` endpoint, filters catalog to only include active sensor types, then publishes each sensor type as a separate message (avoids Kafka size limits, enables incremental consumer processing)
+## Resources
 
-### weatherlink-sql Architecture
+| Component | CPU | Memory | Disk/day |
+|-----------|-----|--------|----------|
+| Kafka | 1–5% | 1–2 GB | ~0.3 MB (with LZ4) |
+| Zookeeper | <1% | 100–200 MB | ~1 MB |
+| PostgreSQL | 1–3% | 100–500 MB | 2–5 MB |
+| weatherlink-kafka | <1% | 20–50 MB | — |
+| weatherlink-sql | 1–3% | 50–100 MB | — |
+| Kafka UI | 1–2% | 100–200 MB | — |
 
-**Consumer Groups**:
-- `weatherlink-sql-metadata` - Consumes `weather.metadata.sensors`
-- `weatherlink-sql-catalog` - Consumes `weather.metadata.catalog`
-- `weatherlink-sql-data` - Consumes `weather.*` data topics (discovered at startup)
+**Total**: ~2–5% CPU, ~1.5–3 GB RAM, ~3–6 MB/day. Kafka: LZ4 + header optimization → ~110 MB/year. See [kafka-standards.md](kafka-standards.md).
 
-**Processing Flow**:
-```
-Message arrives
-├── Extract headers (LSID, sensor_type, data_structure_type)
-├── Lookup device in cache
-│   ├── If found: Process message
-│   └── If not found: Save to orphaned_messages
-├── Parse JSON body (field → value map)
-└── For each field:
-    ├── Lookup tag in cache
-    │   ├── If found: Use existing tag
-    │   └── If not found: Create tag with catalog enrichment
-    ├── Determine data type (numeric, text, null)
-    └── Add to batch writer (numeric/text/null buffers)
-```
+## Directory (summary)
 
-**Cache Management**:
-- Devices cache: `map[int64]*models.Device` (LSID → Device)
-- Tags cache: `map[string]*models.Tag` (key: "device_id:tag_name")
-- Catalog cache: `map[string]*models.FieldMetadata` (key: "sensor_type:data_structure_type:field_name")
-- Thread-safe with `sync.RWMutex`
+Root: `docker-compose*.yml`, `.env`, `CLAUDE.md`, `scripts/`, `docs/`, `data/`, `services/<name>/`. Migrations: `scripts/db/migrations/`. Full tree in [CLAUDE.md](../CLAUDE.md).
 
-**Tag Enrichment**:
-1. On catalog update, query tags missing unit/description
-2. Join tags with devices to get sensor metadata
-3. Lookup field metadata in catalog cache
-4. Update tags with units, descriptions, metadata JSONB
-5. Update cache
+## Extension
 
-## Network Details
+- **Topics**: Auto-created. Name: `namespace.category.subcategory` (e.g. `home.hvac.temperature`).
+- **DB**: `./scripts/db/migrate.sh create <name>` → edit `.up.sql`/`.down.sql` → `migrate.sh up`. See [migrations.md](migrations.md).
+- **New service**: Create `services/<name>/` per [go-standards.md](go-standards.md), Dockerfile, add to `docker-compose.yml` with `kafka:29092`, `postgres:5432`, health deps, `roach-network`.
 
-### Service Communication Matrix
+## Security
 
-| From | To | Address | Protocol | Purpose |
-|------|----|---------| ---------|---------|
-| weatherlink-kafka | Kafka | kafka:29092 | PLAINTEXT | Publish messages |
-| weatherlink-kafka | PostgreSQL | postgres:5432 | TCP | Optional connection (currently unused) |
-| weatherlink-sql | Kafka | kafka:29092 | PLAINTEXT | Consume messages |
-| weatherlink-sql | PostgreSQL | postgres:5432 | TCP | Materialize data |
-| kafka-ui | Kafka | kafka:29092 | PLAINTEXT | Monitoring |
-| Kafka | Zookeeper | zookeeper:2181 | TCP | Coordination |
-| Host | Kafka | localhost:9092 | PLAINTEXT | External access |
-| Host | PostgreSQL | localhost:5432 | TCP | Database access |
-| Host | Kafka UI | localhost:8080 | HTTP | Web interface |
+**Current**: Plaintext in Docker; no auth on Kafka/UI; PG password only. Private network only.
 
-### Docker Network Configuration
+**Production**: TLS for Kafka external; cert auth; PG auth; network policies.
 
-**Network**: `roach-network` (bridge driver)
-**DNS**: Automatic container name resolution
-**Isolation**: Internal services not exposed to host except via port mappings
+## Data Flow (summary)
 
-## Resource Usage
+Weather: API → weatherlink-kafka (dedup, route by category) → Kafka → weatherlink-sql (devices/tags/records, batch COPY) → PostgreSQL. Metadata: API → weatherlink-kafka (key dedup) → metadata topics → weatherlink-sql (upsert + tag enrichment).
 
-### Average Resource Consumption
+## Tuning
 
-| Component | CPU | Memory | Disk Growth |
-|-----------|-----|--------|-------------|
-| Kafka | 1-5% | 1-2 GB | ~0.3 MB/day (with compression) |
-| Zookeeper | <1% | 100-200 MB | ~1 MB/day |
-| PostgreSQL | 1-3% | 100-500 MB | ~2-5 MB/day |
-| weatherlink-kafka | <1% | 20-50 MB | Minimal |
-| weatherlink-sql | 1-3% | 50-100 MB | Minimal |
-| Kafka UI | 1-2% | 100-200 MB | Minimal |
-
-**Total Baseline**: ~2-5% CPU, ~1.5-3 GB RAM, ~3-6 MB/day disk
-
-**Kafka Optimizations** (January 2026):
-- LZ4 compression: 70% storage reduction
-- Header optimization: 115 bytes/message saved
-- Message batching: 100KB batches
-- Result: ~110 MB/year (down from ~400 MB/year)
-- See [kafka-standards.md](kafka-standards.md) for details
-
-**Scaling Notes**:
-- Disk growth linear with data frequency
-- At 5-minute intervals: 4 sensors × 288 messages/day ≈ 1,152 messages/day
-- PostgreSQL growth depends on field count and data types
-
-## Directory Structure
-
-```
-roach/
-├── docker-compose.infrastructure.yml  # Kafka, Zookeeper, PostgreSQL, UI
-├── docker-compose.yml                 # weatherlink-kafka, weatherlink-sql
-├── .env                              # Credentials (gitignored)
-├── .env.example                      # Template
-├── scripts/
-│   ├── start-all.sh                  # Start infrastructure + services
-│   ├── start-infra.sh                # Start infrastructure only
-│   ├── stop-all.sh                   # Stop all
-│   ├── restart-all.sh                    # Restart service(s)
-│   ├── logs.sh                       # View logs
-│   ├── status.sh                     # System status
-│   └── db/
-│       ├── init/
-│       │   └── 01-schema.sql         # Initial PostgreSQL schema
-│       ├── migrations/               # Schema migrations
-│       │   ├── 001_*.up.sql
-│       │   └── 001_*.down.sql
-│       ├── migrate.sh                # Migration tool
-│       ├── query.sh                  # Database query helper
-│       └── reload-orphans.sh         # Reprocess orphaned messages
-├── docs/                             # Documentation
-│   ├── AI-CONTEXT.md                 # Quick start context (read first)
-│   ├── README.md                     # Documentation index
-│   ├── architecture.md               # This file
-│   ├── operations.md                 # Operations guide
-│   ├── troubleshooting.md            # Problem solving
-│   ├── go-standards.md               # Code standards
-│   ├── kafka-topics.md               # Topic reference
-│   └── migrations.md                 # Migration details
-├── data/                             # Persistent storage (gitignored)
-│   ├── kafka/                        # Kafka logs and data
-│   ├── zookeeper/                    # Zookeeper data
-│   └── postgres/                     # PostgreSQL data
-└── services/
-    ├── weatherlink-kafka/              # Real-time data ingestion
-    │   ├── main.go                   # Entry point
-    │   ├── Dockerfile                # Multi-stage build
-    │   ├── go.mod, go.sum            # Go dependencies
-    │   ├── config/, models/, api/    # Packages
-    │   ├── service/, kafka/, internal/
-    │   └── README.md
-    └── weatherlink-sql/                  # Kafka→PostgreSQL materializer
-        ├── main.go                   # Entry point
-        ├── Dockerfile                # Multi-stage build
-        ├── go.mod, go.sum            # Go dependencies
-        ├── config/, models/, cache/  # Packages
-        ├── repository/, service/, kafka/
-        └── README.md
-```
-
-## Extension Points
-
-### Adding Kafka Topics
-
-Topics auto-created on first publish. Follow naming convention: `namespace.category.subcategory`
-
-**Examples**:
-- `home.hvac.temperature`
-- `home.security.motion`
-- `home.energy.consumption`
-
-### Adding Database Tables
-
-Use migration framework:
-```bash
-./scripts/db/migrate.sh create add_new_table
-# Edit generated .up.sql and .down.sql files
-./scripts/db/migrate.sh up
-```
-
-### Adding New Services
-
-1. Create `services/<name>/` with Go service following [go-standards.md](go-standards.md)
-2. Create Dockerfile (use existing services as template)
-3. Add to `docker-compose.yml` with dependencies on `kafka` and `postgres` health checks
-4. Connect to `kafka:29092` and `postgres:5432` via Docker network
-5. Add to `roach-network`
-
-## Security Model
-
-### Current (Development)
-- All communication plaintext within Docker network
-- No authentication on Kafka, PostgreSQL, Kafka UI
-- Services trust each other implicitly
-- Suitable for private networks only
-
-### Future (Production)
-- SSL/TLS for Kafka external access
-- Certificate-based authentication
-- PostgreSQL password authentication (already configured)
-- Let's Encrypt certificates for external services
-- Network policies for container isolation
-
-## Data Flow Details
-
-### Weather Data Pipeline
-
-```
-1. WeatherLink API (HTTPS)
-   ↓
-   GET /v2/current/{station_id} (every 5m)
-   GET /v2/sensors (on METADATA_FETCH_INTERVAL)
-   GET /v2/sensor-catalog (on METADATA_FETCH_INTERVAL)
-   
-2. weatherlink-kafka
-   ↓
-   Deduplicate (Kafka key cache)
-   Parse response
-   Split by sensor category
-   ↓
-   Publish to Kafka (JSON + headers)
-   
-3. Kafka Broker
-   ↓
-   Persist to disk (infinite retention)
-   Replicate (if multi-broker)
-   
-4. weatherlink-sql
-   ↓
-   Consume messages
-   Lookup/create devices
-   Lookup/create tags (with enrichment)
-   Insert to typed records tables
-   
-5. PostgreSQL
-   ↓
-   Query via records view
-   Analyze with SQL
-```
-
-### Metadata Flow
-
-```
-1. API: Sensors/Catalog/Station
-   ↓
-2. weatherlink-kafka: Key-based deduplication
-   ↓ (only if new key)
-3. Kafka: Metadata topics
-   ↓
-4. weatherlink-sql: Upsert to DB + cache
-   ↓
-5. Tag enrichment: Backfill units/descriptions
-```
-
-## Performance Tuning
-
-### Kafka
-
-- `KAFKA_LOG_RETENTION_MS=-1` for infinite retention (or set limit to save disk)
-- `KAFKA_NUM_IO_THREADS=8` for I/O throughput
-- Increase `KAFKA_SOCKET_REQUEST_MAX_BYTES` for large messages
-
-### PostgreSQL
-
-- Default settings suitable for low-volume IoT data
-- For higher volume: Tune `shared_buffers`, `work_mem`, `maintenance_work_mem`
-- Consider partitioning `records_*` tables by `ts` (timestamp) for large datasets
-- Optimized schema: Composite primary keys, reduced columns, ~45% storage reduction
-
-### Services
-
-- Increase `FETCH_INTERVAL` to reduce API calls and Kafka writes
-- Adjust `BATCH_SIZE` in weatherlink-sql for bulk inserts
-- Use `LOG_LEVEL=warn` or `error` in production to reduce I/O
+- **Kafka**: Retention -1 or set limit; increase `KAFKA_NUM_IO_THREADS`, `KAFKA_SOCKET_REQUEST_MAX_BYTES` for large messages.
+- **PostgreSQL**: Defaults OK for low volume; for scale: `shared_buffers`, `work_mem`; consider partitioning records_* by `ts`.
+- **Services**: Increase `FETCH_INTERVAL`; tune `BATCH_SIZE` (weatherlink-sql); `LOG_LEVEL=warn` in production.
