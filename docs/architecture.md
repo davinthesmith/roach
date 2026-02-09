@@ -40,6 +40,11 @@
 - **Flow**: Headers → device lookup (or orphan) → parse JSON → per field: tag lookup/create (catalog enrichment) → batch writer (numeric/text/null).
 - **Caches**: Device (LSID→Device), Tag (device_id:tag_name→Tag), Catalog (sensor_type:data_structure_type:field_name→FieldMetadata); thread-safe.
 
+### ubiquiti-video-kafka
+- **Flow**: Fetch cameras → per-camera goroutine: POST rtsps-stream → ffmpeg (1 fps MJPEG) → parse JPEG frames → Kafka topic per camera.
+- **Topics**: `ubiquiti.protect.video.{camera_name}` with 30-min retention. Service creates topics via Kafka Admin API.
+- **Reconnect**: On ffmpeg exit or RTSPS token expiry, backoff and re-fetch stream URL. Per-camera isolation (one failing camera does not block others).
+
 ## Network
 
 | From | To | Address | Purpose |

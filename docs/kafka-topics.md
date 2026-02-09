@@ -32,6 +32,21 @@ Key: `{camera_name}:{timestamp}` (camera name sanitized: lowercase, spaces→und
 | ubiquiti.protect.audio | babyCry, coAlarm, smoke, speak |
 | ubiquiti.protect.motion | motion |
 
+## UniFi Protect Video (ubiquiti-video-kafka)
+
+Topic per camera: `ubiquiti.protect.video.{camera_name}` (camera name sanitized: lowercase, spaces/dashes→underscores). **Retention: 30 minutes** (`retention.ms=1800000`); topics created by the service via Kafka Admin API. No maintainer cleanup needed.
+
+Key: `{camera_id}:{timestamp}`. Value: raw JPEG frame bytes (binary, ~1 frame/sec).
+
+| Header | Description |
+|--------|-------------|
+| schema_version | 1 |
+| camera_id | Protect camera UUID |
+| camera_name | Sanitized camera name |
+| timestamp | Unix seconds |
+| source | unifi-protect-video |
+| content_type | image/jpeg |
+
 ## Home Assistant Ecobee (homeassistant-kafka)
 
 Key: `{friendly_name}:{timestamp}` (entity_id minus domain and topic-redundant suffix).

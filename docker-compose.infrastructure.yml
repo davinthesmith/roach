@@ -66,6 +66,10 @@ services:
       KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
       KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600
       
+      # Message size (10MB max for video frames)
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
+      
       # Offset configuration
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes:
