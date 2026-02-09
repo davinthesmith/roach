@@ -123,6 +123,36 @@ Key format: `{friendly_name}:{timestamp}` — the friendly name is derived from 
 ##### homeassistant.ecobee.other
 **Fallback** - Unclassified Ecobee-related entities
 
+#### Home Assistant Command Topics
+Consumed by the `homeassistant-command` service to control Home Assistant devices via WebSocket `call_service` API
+
+##### homeassistant.command
+**Thermostat Commands** - Service calls forwarded to Home Assistant
+
+Consumer group: `homeassistant-command`
+
+Body format:
+```json
+{
+  "domain": "climate",
+  "service": "set_temperature",
+  "entity_id": "climate.sneaux",
+  "data": {
+    "temperature": 72
+  }
+}
+```
+
+Supported services:
+- `climate.set_temperature` - Set target temperature (`data.temperature`)
+- `climate.set_hvac_mode` - Set HVAC mode (`data.hvac_mode`: off, heat, cool, heat_cool, auto)
+- `climate.set_preset_mode` - Set preset mode (`data.preset_mode`: away, home, sleep)
+- `climate.set_fan_mode` - Set fan mode (`data.fan_mode`: auto, on)
+- `climate.turn_on` - Turn on the thermostat
+- `climate.turn_off` - Turn off the thermostat
+
+Testing: Use `scripts/homeassistant/send-command.sh` to produce test messages.
+
 ## Message Structure
 
 ### Message Format

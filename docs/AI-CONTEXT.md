@@ -101,6 +101,14 @@ docker ps                       # Check containers
 - Topics Published: `homeassistant.ecobee.*`
 - Filtering: `ecobee` entity_id substring or explicit list (optional)
 
+**homeassistant-command** (`roach-homeassistant-command`)
+- Language: Go
+- Purpose: Thermostat control via Kafka commands (Kafka → Home Assistant WebSocket)
+- Topic Consumed: `homeassistant.command`
+- Consumer Group: `homeassistant-command`
+- Supported: `climate.set_temperature`, `set_hvac_mode`, `set_preset_mode`, `set_fan_mode`, `turn_on`, `turn_off`
+- Testing: `scripts/homeassistant/send-command.sh`
+
 **weatherlink-kafka** backfill mode
 - Language: Go
 - Purpose: Historical data backfill (API → Kafka)
@@ -160,6 +168,7 @@ roach-network (Docker bridge)
     ├── weatherlink-kafka (connects to kafka:29092, postgres:5432 [unused])
     ├── weatherlink-sql (connects to kafka:29092, postgres:5432)
     ├── homeassistant-kafka (connects to kafka:29092, homeassistant:8123)
+    ├── homeassistant-command (connects to kafka:29092, homeassistant:8123)
     └── weatherlink-sql-backfill (connects to kafka:29092, postgres:5432) [manual]
 ```
 
@@ -214,6 +223,16 @@ POLL_ENTITY_FILTER=             # Comma-separated entity_ids (optional)
 LOG_LEVEL=info                  # debug|info|warn|error
 ```
 
+**homeassistant-command**:
+```bash
+KAFKA_BROKER=kafka:29092        # Default
+HA_WS_URL=ws://homeassistant:8123/api/websocket  # Optional override
+KAFKA_TOPIC=homeassistant.command  # Topic to consume
+KAFKA_CONSUMER_GROUP=homeassistant-command  # Consumer group
+WS_RECONNECT_BACKOFF=1s,5s,30s  # Reconnect delays
+LOG_LEVEL=info                  # debug|info|warn|error
+```
+
 **weatherlink-kafka** backfill (optional):
 ```bash
 KAFKA_BACKFILL_ENABLED=true     # Enable historical backfill
@@ -242,7 +261,7 @@ END_OFFSET=-1                   # -1=latest
 - Data: `./data/kafka`, `./data/zookeeper`, `./data/postgres`
 - Scripts: `./scripts/*.sh`
 - Documentation: `./docs/*.md`
-- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/homeassistant-kafka/`, `./services/weatherlink-sql-backfill/`
+- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/homeassistant-kafka/`, `./services/homeassistant-command/`, `./services/weatherlink-sql-backfill/`
 
 ### Common Customizations
 
@@ -277,6 +296,7 @@ kafka:
 - **weatherlink-kafka**: Real-time API → Kafka (streaming daemon, optional backfill mode)
 - **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming daemon)
 - **homeassistant-kafka**: Real-time Home Assistant → Kafka (event stream)
+- **homeassistant-command**: Kafka → Home Assistant (command execution)
 - **weatherlink-sql-backfill**: Historical Kafka → PostgreSQL (one-shot)
 
 ### weatherlink-kafka Service
@@ -354,6 +374,38 @@ homeassistant-kafka/
 6. Optional REST polling fallback when enabled
 
 **Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`, `github.com/gorilla/websocket`
+
+### homeassistant-command Service
+
+**Purpose**: Consume thermostat commands from Kafka and execute via Home Assistant WebSocket `call_service` API
+
+**Package Structure**:
+```
+homeassistant-command/
+├── main.go              # Entry point
+├── config/              # Environment variable parsing
+│   └── config.go
+├── ha/                  # Home Assistant WebSocket client (call_service)
+│   └── client.go
+├── kafka/               # Kafka consumer
+│   └── consumer.go
+├── models/              # Command + config models
+│   ├── config.go
+│   └── command.go
+├── service/             # Business logic
+│   └── service.go
+└── Dockerfile
+```
+
+**Key Operations**:
+1. Connect to Home Assistant WebSocket and authenticate
+2. Consume commands from `homeassistant.command` topic
+3. Translate to `call_service` WebSocket messages
+4. Wait for result confirmation from HA
+5. Reconnect automatically on WebSocket failure
+6. Periodic ping/pong keepalive
+
+**Dependencies**: `github.com/gorilla/websocket`, `github.com/segmentio/kafka-go`
 
 ### weatherlink-sql Service
 

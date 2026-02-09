@@ -87,6 +87,33 @@ services:
       retries: 3
       start_period: 10s
 
+  homeassistant-command:
+    build:
+      context: ./services
+      dockerfile: homeassistant-command/Dockerfile
+    container_name: roach-homeassistant-command
+    restart: unless-stopped
+    environment:
+      - HA_URL=${HA_URL}
+      - HA_WS_URL=${HA_WS_URL}
+      - HA_TOKEN=${HA_TOKEN}
+      - KAFKA_BROKER=kafka:29092
+      - KAFKA_TOPIC=homeassistant.command
+      - KAFKA_CONSUMER_GROUP=homeassistant-command
+      - LOG_LEVEL=info
+      - WS_RECONNECT_BACKOFF=1s,5s,30s
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - roach-network
+    healthcheck:
+      test: pgrep -f homeassistant-command || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   weatherlink-kafka-backfill:
     build:
       context: ./services

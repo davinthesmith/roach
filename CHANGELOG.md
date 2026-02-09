@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-02-08
+
+### homeassistant-command Service
+
+#### Added
+- **homeassistant-command**: New service that consumes thermostat commands from `homeassistant.command` Kafka topic and executes them against Home Assistant via WebSocket `call_service` API.
+- **WebSocket client**: Persistent connection with authentication, auto-reconnect with backoff, ping/pong keepalive, and `call_service` execution with result correlation.
+- **Kafka consumer**: Uses `segmentio/kafka-go` with consumer group `homeassistant-command` for exactly-once processing.
+- **Supported services**: `climate.set_temperature`, `climate.set_hvac_mode`, `climate.set_preset_mode`, `climate.set_fan_mode`, `climate.turn_on`, `climate.turn_off`.
+- **Testing script**: `scripts/homeassistant/send-command.sh` for producing test commands to Kafka with friendly CLI syntax.
+- **Docker Compose**: Added `homeassistant-command` service definition.
+- **Documentation**: Service README, updated kafka-topics.md, AI-CONTEXT.md, scripts/README.md, .env.example.
+
 ## 2026-02-01
 
 ### homeassistant-kafka Service

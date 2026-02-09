@@ -115,6 +115,8 @@ Restart services without rebuilding.
 - `postgres`
 - `weatherlink-kafka`
 - `weatherlink-sql`
+- `homeassistant-kafka`
+- `homeassistant-command`
 
 **Examples:**
 ```bash
@@ -173,6 +175,8 @@ View logs for services.
 - `postgres`
 - `weatherlink-kafka`
 - `weatherlink-sql`
+- `homeassistant-kafka`
+- `homeassistant-command`
 
 **Examples:**
 ```bash
@@ -181,7 +185,7 @@ View logs for services.
 
 # Specific service
 ./scripts/logs.sh weatherlink-kafka
-./scripts/logs.sh postgres
+./scripts/logs.sh homeassistant-command
 ```
 
 **Note:** Logs follow by default (Ctrl+C to exit).
@@ -422,6 +426,58 @@ Interactive tool to reprocess orphaned messages.
 2. Fix root cause (e.g., run metadata backfill)
 3. Reprocess orphans: `./scripts/db/reload-orphans.sh`
 4. Monitor: `./scripts/logs.sh weatherlink-sql`
+
+---
+
+## Home Assistant Operations
+
+### homeassistant/send-command.sh
+
+Send thermostat commands to the `homeassistant.command` Kafka topic for the `homeassistant-command` service to execute.
+
+**Usage:**
+```bash
+./scripts/homeassistant/send-command.sh <service> [value] [--entity <entity_id>]
+```
+
+**Services:**
+
+| Service | Value | Example |
+|---|---|---|
+| `set_temperature` | Temperature (number) | `set_temperature 72` |
+| `set_hvac_mode` | Mode (off, heat, cool, heat_cool, auto) | `set_hvac_mode heat` |
+| `set_preset_mode` | Preset (away, home, sleep) | `set_preset_mode away` |
+| `set_fan_mode` | Fan mode (auto, on) | `set_fan_mode auto` |
+| `turn_on` | _(none)_ | `turn_on` |
+| `turn_off` | _(none)_ | `turn_off` |
+
+**Options:**
+- `--entity <entity_id>` - Target entity (default: `$HA_THERMOSTAT_ENTITY` or `climate.sneaux`)
+
+**Examples:**
+```bash
+# Set temperature to 72
+./scripts/homeassistant/send-command.sh set_temperature 72
+
+# Set HVAC mode to heat
+./scripts/homeassistant/send-command.sh set_hvac_mode heat
+
+# Set preset mode to away
+./scripts/homeassistant/send-command.sh set_preset_mode away
+
+# Target a specific entity
+./scripts/homeassistant/send-command.sh set_temperature 68 --entity climate.sneaux
+
+# Turn off the thermostat
+./scripts/homeassistant/send-command.sh turn_off
+```
+
+**Environment Variables:**
+- `HA_THERMOSTAT_ENTITY` - Default entity ID (default: `climate.sneaux`)
+- `KAFKA_CONTAINER` - Docker container name (default: `roach-kafka`)
+- `KAFKA_TOPIC` - Kafka topic (default: `homeassistant.command`)
+
+**Prerequisites:** Kafka infrastructure must be running (`./scripts/start-infra.sh`).
 
 ---
 
