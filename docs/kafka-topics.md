@@ -97,6 +97,26 @@ Contains: Station name, location, timezone, registration details
 
 Key format: `station_id:weekStart`
 
+#### UniFi Protect Topics
+Published in real-time via WebSocket event stream from the UniFi Protect NVR Integration API.
+
+Key format: `{camera_name}:{timestamp}` — the camera name is sanitized to lowercase with underscores (e.g., `Front Door` → `front_door`). Timestamp is Unix seconds derived from the event's `start` field.
+
+##### ubiquiti.protect.smart
+**Smart Video AI Detections** - camera AI events
+
+Detection types: `person`, `vehicle`, `animal`, `package`
+
+##### ubiquiti.protect.audio
+**Smart Audio AI Detections** - camera audio AI events
+
+Detection types: `babyCry`, `coAlarm`, `smoke`, `speak`
+
+##### ubiquiti.protect.motion
+**Motion Events** - camera motion triggers
+
+Detection type: `motion`
+
 #### Home Assistant (Ecobee) Topics
 Published on Home Assistant `state_changed` events (WebSocket) or optional polling
 
@@ -183,6 +203,15 @@ See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
 - `source` - Message source (string, "homeassistant")
 - `event_type` - Home Assistant event type (string, e.g., "state_changed")
 
+**UniFi Protect event topics**:
+- `schema_version` - Schema version (string, e.g., "1")
+- `camera_id` - Camera/device ID (string)
+- `camera_name` - Sanitized camera name (string)
+- `event_type` - Event category (string: "smart", "audio", "motion")
+- `detection_type` - Specific detection type (string, e.g., "person", "babyCry", "motion")
+- `timestamp` - Unix timestamp in seconds (integer)
+- `source` - Message source (string, "unifi-protect")
+
 ### Body Example (weather.iss)
 ```json
 {
@@ -232,6 +261,19 @@ See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
     "id": "abcdef123456",
     "user_id": "1234abcd"
   }
+}
+```
+
+### Body Example (ubiquiti.protect.smart)
+```json
+{
+  "id": "abc123def456",
+  "modelKey": "event",
+  "type": "smartDetectZone",
+  "start": 1706140800000,
+  "end": 1706140810000,
+  "smartDetectTypes": ["person"],
+  "camera": "60a1b2c3d4e5f6"
 }
 ```
 

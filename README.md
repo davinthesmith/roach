@@ -4,14 +4,14 @@ Kafka-based data aggregation system for home IoT and automation with infinite da
 
 ## Overview
 
-ROACH is a scalable Kafka system designed to collect, persist, and stream data from home IoT devices. Currently includes WeatherLink weather station integration and Home Assistant Ecobee event streaming.
+ROACH is a scalable Kafka system designed to collect, persist, and stream data from home IoT devices. Currently includes WeatherLink weather station integration, Home Assistant Ecobee event streaming and thermostat control, and UniFi Protect camera event ingestion.
 
 ## Quick Start
 
 ```bash
 # Configure
 cp .env.example .env
-vim .env  # Add your WeatherLink + Home Assistant credentials
+vim .env  # Add your WeatherLink, Home Assistant, UniFi Protect credentials
 
 # Start
 ./scripts/start-all.sh
@@ -66,9 +66,11 @@ roach/
 ├── docs/                              # Documentation
 ├── services/                          # Service implementations
 │   ├── weatherlink-kafka/           # Real-time data ingestion (API → Kafka)
-│   ├── weatherlink-sql/     # Real-time materialization (Kafka → PostgreSQL)
-│   ├── homeassistant-kafka/ # Home Assistant event streaming (WebSocket → Kafka)
-│   └── weatherlink-sql-backfill/   # Database backfill (Kafka → PostgreSQL)
+│   ├── weatherlink-sql/             # Real-time materialization (Kafka → PostgreSQL)
+│   ├── homeassistant-kafka/         # Home Assistant event streaming (WebSocket → Kafka)
+│   ├── homeassistant-command/       # Thermostat control (Kafka → Home Assistant)
+│   ├── ubiquiti-kafka/              # UniFi Protect events (WebSocket → Kafka)
+│   └── weatherlink-sql-backfill/    # Database backfill (Kafka → PostgreSQL)
 └── data/                             # Persistent data
 ```
 
@@ -91,6 +93,10 @@ WEATHERLINK_STATION_ID=your_station_id
 # Home Assistant
 HA_URL=http://homeassistant:8123
 HA_TOKEN=your_long_lived_access_token
+
+# UniFi Protect
+UNIFI_HOST=https://192.168.1.1
+UNIFI_API_KEY=your_api_key
 
 # PostgreSQL
 POSTGRES_PASSWORD=your_secure_password
@@ -171,6 +177,19 @@ Home Assistant event streaming service (WebSocket → Kafka):
 - Filters Ecobee entities
 - Publishes full HA event payloads to Kafka topics
 
+### homeassistant-command
+Thermostat control service (Kafka → Home Assistant):
+- Consumes commands from `homeassistant.command` topic
+- Executes via Home Assistant WebSocket `call_service` API
+- Supports set_temperature, set_hvac_mode, set_preset_mode, set_fan_mode, turn_on, turn_off
+
+### ubiquiti-kafka
+UniFi Protect event ingestion service (WebSocket → Kafka):
+- Subscribes to Protect NVR event stream via Integration API
+- Classifies events: smart video, audio AI, and motion
+- Resolves camera IDs to friendly names
+- Auto-reconnects with exponential backoff
+
 ## Topics
 
 Current Kafka topics:
@@ -181,6 +200,10 @@ Current Kafka topics:
 - `weather.other` - Fallback topic for unknown categories
 - `weather.metadata.*` - Sensor metadata
 - `homeassistant.ecobee.*` - Home Assistant Ecobee events
+- `homeassistant.command` - Thermostat control commands
+- `ubiquiti.protect.smart` - UniFi Protect smart video AI detections
+- `ubiquiti.protect.audio` - UniFi Protect audio AI detections
+- `ubiquiti.protect.motion` - UniFi Protect motion events
 
 PostgreSQL tables:
 - `devices` - Sensor registry with full device metadata

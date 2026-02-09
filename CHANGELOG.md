@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-02-09
+
+### ubiquiti-kafka Service
+
+#### Added
+- **ubiquiti-kafka**: New service that subscribes to UniFi Protect events via WebSocket (`/proxy/protect/integration/v1/subscribe/events`) and publishes to Kafka.
+- **API client** (`api/client.go`): Connects to local NVR Protect Integration API with API key auth, TLS skip verify for self-signed certs, and WebSocket event subscription.
+- **Event classification**: Routes events to `ubiquiti.protect.smart` (person, vehicle, animal, package), `ubiquiti.protect.audio` (babyCry, coAlarm, smoke, speak), and `ubiquiti.protect.motion`.
+- **Camera name resolution**: Fetches camera metadata on startup via `/cameras` endpoint for friendly key derivation (e.g., `courtyard:1706140800`).
+- **Kafka producer**: Idempotent `confluent-kafka-go` producer with LZ4 compression, batching, and delivery reports.
+- **Reconnect loop**: Exponential backoff with configurable delays (`RECONNECT_BACKOFF`), resets after 60s of stable connection.
+- **Docker Compose**: Added `ubiquiti-kafka` service definition.
+- **Configuration**: Added `UNIFI_HOST`, `UNIFI_API_KEY` to `.env.example`.
+- **Documentation**: Service README, updated AI-CONTEXT.md, kafka-topics.md with service entry, topics, and config.
+
 ## 2026-02-08
 
 ### homeassistant-command Service

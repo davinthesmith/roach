@@ -14,7 +14,7 @@ ROACH (Real-time Observability Aggregation Conduit for the Home) is a Kafka-base
 - Timestamp-based deduplication
 - Real-time streaming and SQL storage
 
-**Current Implementation**: WeatherLink weather station integration with 7 core Kafka topics (plus `weather.other` fallback) and 3 Go services (2 real-time, 1 backfill), optimized for storage efficiency via compression and header optimization
+**Current Implementation**: WeatherLink weather station, Home Assistant Ecobee, and UniFi Protect integrations with 16 Kafka topics and 6 Go services (4 real-time daemons, 2 backfill/tool), optimized for storage efficiency via compression and header optimization
 
 **Technology Stack**: Docker Compose, Kafka 7.5.0, PostgreSQL 16, Zookeeper, Go 1.21+
 
@@ -23,7 +23,7 @@ ROACH (Real-time Observability Aggregation Conduit for the Home) is a Kafka-base
 ```bash
 # Configure credentials
 cp .env.example .env
-vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION_ID, HA_URL, HA_TOKEN, POSTGRES_PASSWORD
+vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION_ID, HA_URL, HA_TOKEN, UNIFI_HOST, UNIFI_API_KEY, POSTGRES_PASSWORD
 
 # Start system
 ./scripts/start-all.sh          # Normal start
@@ -109,6 +109,13 @@ docker ps                       # Check containers
 - Supported: `climate.set_temperature`, `set_hvac_mode`, `set_preset_mode`, `set_fan_mode`, `turn_on`, `turn_off`
 - Testing: `scripts/homeassistant/send-command.sh`
 
+**ubiquiti-kafka** (`roach-ubiquiti-kafka`)
+- Language: Go
+- Purpose: Real-time UniFi Protect event ingestion (WebSocket → Kafka)
+- Topics Published: `ubiquiti.protect.smart`, `ubiquiti.protect.audio`, `ubiquiti.protect.motion`
+- Connection: Local NVR via `UNIFI_HOST` (`/proxy/protect/integration/v1/subscribe/events`), TLS skip verify
+- Events: Smart video (person, vehicle, animal, package), audio (babyCry, coAlarm, smoke, speak), motion
+
 **weatherlink-kafka** backfill mode
 - Language: Go
 - Purpose: Historical data backfill (API → Kafka)
@@ -169,6 +176,7 @@ roach-network (Docker bridge)
     ├── weatherlink-sql (connects to kafka:29092, postgres:5432)
     ├── homeassistant-kafka (connects to kafka:29092, homeassistant:8123)
     ├── homeassistant-command (connects to kafka:29092, homeassistant:8123)
+    ├── ubiquiti-kafka (connects to kafka:29092, UNIFI_HOST [local NVR])
     └── weatherlink-sql-backfill (connects to kafka:29092, postgres:5432) [manual]
 ```
 
@@ -186,6 +194,10 @@ WEATHERLINK_STATION_ID=<your_station_id>
 # Home Assistant (Required for homeassistant-kafka)
 HA_URL=http://homeassistant:8123
 HA_TOKEN=<your_long_lived_access_token>
+
+# UniFi Protect (Required for ubiquiti-kafka)
+UNIFI_API_KEY=<your_api_key>
+UNIFI_HOST=<your_nvr_url>           # e.g. https://192.168.1.1
 
 # PostgreSQL (Required)
 POSTGRES_PASSWORD=<secure_password>
@@ -233,6 +245,13 @@ WS_RECONNECT_BACKOFF=1s,5s,30s  # Reconnect delays
 LOG_LEVEL=info                  # debug|info|warn|error
 ```
 
+**ubiquiti-kafka**:
+```bash
+KAFKA_BROKER=kafka:29092        # Default
+RECONNECT_BACKOFF=1s,5s,30s     # Reconnect delays
+LOG_LEVEL=info                  # debug|info|warn|error
+```
+
 **weatherlink-kafka** backfill (optional):
 ```bash
 KAFKA_BACKFILL_ENABLED=true     # Enable historical backfill
@@ -261,7 +280,7 @@ END_OFFSET=-1                   # -1=latest
 - Data: `./data/kafka`, `./data/zookeeper`, `./data/postgres`
 - Scripts: `./scripts/*.sh`
 - Documentation: `./docs/*.md`
-- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/homeassistant-kafka/`, `./services/homeassistant-command/`, `./services/weatherlink-sql-backfill/`
+- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/homeassistant-kafka/`, `./services/homeassistant-command/`, `./services/ubiquiti-kafka/`, `./services/weatherlink-sql-backfill/`
 
 ### Common Customizations
 
@@ -297,6 +316,7 @@ kafka:
 - **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming daemon)
 - **homeassistant-kafka**: Real-time Home Assistant → Kafka (event stream)
 - **homeassistant-command**: Kafka → Home Assistant (command execution)
+- **ubiquiti-kafka**: Real-time UniFi Protect → Kafka (WebSocket event stream)
 - **weatherlink-sql-backfill**: Historical Kafka → PostgreSQL (one-shot)
 
 ### weatherlink-kafka Service
@@ -407,6 +427,38 @@ homeassistant-command/
 
 **Dependencies**: `github.com/gorilla/websocket`, `github.com/segmentio/kafka-go`
 
+### ubiquiti-kafka Service
+
+**Purpose**: Stream UniFi Protect events via WebSocket and publish smart/audio/motion detections to Kafka
+
+**Package Structure**:
+```
+ubiquiti-kafka/
+├── main.go              # Entry point
+├── config/              # Environment variable parsing
+│   └── config.go
+├── api/                 # UniFi Protect API client (WebSocket)
+│   └── client.go
+├── kafka/               # Kafka producer
+│   └── producer.go
+├── models/              # Event + config models
+│   ├── config.go
+│   └── events.go
+├── service/             # Business logic
+│   └── service.go
+└── Dockerfile
+```
+
+**Key Operations**:
+1. Fetch camera metadata from Protect API (`/cameras`) for name resolution
+2. Subscribe to WebSocket event stream at `/proxy/protect/integration/v1/subscribe/events`
+3. Classify events: smart video (person, vehicle, animal, package), audio (babyCry, coAlarm, smoke, speak), motion
+4. Route to `ubiquiti.protect.smart`, `ubiquiti.protect.audio`, `ubiquiti.protect.motion` topics
+5. Publish full event payloads with headers
+6. Auto-reconnect with exponential backoff
+
+**Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`, `github.com/gorilla/websocket`
+
 ### weatherlink-sql Service
 
 **Purpose**: Materialize Kafka messages to PostgreSQL with automatic tag creation
@@ -466,6 +518,19 @@ Format: `namespace.category[.subcategory]`
 - Key fields: `battery_voltage`, `wifi_rssi`, `uptime`, `firmware_version`, `free_mem`
 
 **weather.other** - Fallback for unknown categories
+
+### UniFi Protect Topics (Published via WebSocket event stream)
+
+**ubiquiti.protect.smart** - Smart video AI detections
+- Detection types: `person`, `vehicle`, `animal`, `package`
+- Key: `{camera_name}:{timestamp}`
+
+**ubiquiti.protect.audio** - Smart audio AI detections
+- Detection types: `babyCry`, `coAlarm`, `smoke`, `speak`
+- Key: `{camera_name}:{timestamp}`
+
+**ubiquiti.protect.motion** - Motion events
+- Key: `{camera_name}:{timestamp}`
 
 ### Metadata Topics (Published every `METADATA_FETCH_INTERVAL`, deduped by key cache)
 
