@@ -4,14 +4,14 @@ Kafka-based data aggregation system for home IoT and automation with infinite da
 
 ## Overview
 
-ROACH is a scalable Kafka system designed to collect, persist, and stream data from home IoT devices. Currently includes WeatherLink weather station integration.
+ROACH is a scalable Kafka system designed to collect, persist, and stream data from home IoT devices. Currently includes WeatherLink weather station integration and Home Assistant Ecobee event streaming.
 
 ## Quick Start
 
 ```bash
 # Configure
 cp .env.example .env
-vim .env  # Add your WeatherLink credentials
+vim .env  # Add your WeatherLink + Home Assistant credentials
 
 # Start
 ./scripts/start-all.sh
@@ -67,6 +67,7 @@ roach/
 ├── services/                          # Service implementations
 │   ├── weatherlink-kafka/           # Real-time data ingestion (API → Kafka)
 │   ├── weatherlink-sql/     # Real-time materialization (Kafka → PostgreSQL)
+│   ├── homeassistant-kafka/ # Home Assistant event streaming (WebSocket → Kafka)
 │   └── weatherlink-sql-backfill/   # Database backfill (Kafka → PostgreSQL)
 └── data/                             # Persistent data
 ```
@@ -86,6 +87,10 @@ Required environment variables in `.env`:
 WEATHERLINK_API_KEY=your_api_key
 WEATHERLINK_API_SECRET=your_api_secret
 WEATHERLINK_STATION_ID=your_station_id
+
+# Home Assistant
+HA_URL=http://homeassistant:8123
+HA_TOKEN=your_long_lived_access_token
 
 # PostgreSQL
 POSTGRES_PASSWORD=your_secure_password
@@ -160,6 +165,12 @@ Database backfill tool (Kafka → PostgreSQL):
 - Worker pool for parallel processing
 - Run when database is behind but Kafka has complete data
 
+### homeassistant-kafka
+Home Assistant event streaming service (WebSocket → Kafka):
+- Subscribes to `state_changed` events
+- Filters Ecobee entities
+- Publishes full HA event payloads to Kafka topics
+
 ## Topics
 
 Current Kafka topics:
@@ -169,6 +180,7 @@ Current Kafka topics:
 - `weather.health` - Console health
 - `weather.other` - Fallback topic for unknown categories
 - `weather.metadata.*` - Sensor metadata
+- `homeassistant.ecobee.*` - Home Assistant Ecobee events
 
 PostgreSQL tables:
 - `devices` - Sensor registry with full device metadata

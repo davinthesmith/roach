@@ -97,6 +97,32 @@ Contains: Station name, location, timezone, registration details
 
 Key format: `station_id:weekStart`
 
+#### Home Assistant (Ecobee) Topics
+Published on Home Assistant `state_changed` events (WebSocket) or optional polling
+
+Key format: `{friendly_name}:{timestamp}` — the friendly name is derived from the entity ID by stripping the HA domain prefix and any sensor-type suffix redundant with the topic (e.g., `sensor.jadyn_s_room_temperature` on the temperature topic becomes `jadyn_s_room`).
+
+##### homeassistant.ecobee.thermostat.climate
+**Thermostat Climate** - `climate` entities
+
+##### homeassistant.ecobee.weather
+**Weather** - `weather` domain entities (forecast data)
+
+##### homeassistant.ecobee.sensor.temperature
+**Temperature** - sensor entities with temperature units or device_class
+
+##### homeassistant.ecobee.sensor.humidity
+**Humidity** - sensor entities with humidity units or device_class
+
+##### homeassistant.ecobee.sensor.presence
+**Presence** - binary_sensor entities with occupancy/presence device_class
+
+##### homeassistant.ecobee.sensor.battery
+**Battery** - sensor entities with battery device_class
+
+##### homeassistant.ecobee.other
+**Fallback** - Unclassified Ecobee-related entities
+
 ## Message Structure
 
 ### Message Format
@@ -119,6 +145,14 @@ All messages are JSON with Kafka headers
 
 See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
 
+**Home Assistant event topics**:
+- `schema_version` - Schema version (string, e.g., "1")
+- `entity_id` - Home Assistant entity ID (string)
+- `domain` - Entity domain (string, e.g., "sensor", "climate")
+- `timestamp` - Unix timestamp in seconds (integer)
+- `source` - Message source (string, "homeassistant")
+- `event_type` - Home Assistant event type (string, e.g., "state_changed")
+
 ### Body Example (weather.iss)
 ```json
 {
@@ -132,6 +166,42 @@ See [kafka-standards.md](kafka-standards.md) for header optimization rationale.
   "solar_rad": 450,
   "uv_index": 3.2,
   "ts": 1706140800
+}
+```
+
+### Body Example (homeassistant.ecobee.sensor.temperature)
+```json
+{
+  "event_type": "state_changed",
+  "data": {
+    "entity_id": "sensor.ecobee_temperature",
+    "old_state": {
+      "entity_id": "sensor.ecobee_temperature",
+      "state": "71.2",
+      "attributes": {
+        "device_class": "temperature",
+        "unit_of_measurement": "°F"
+      },
+      "last_changed": "2026-02-01T12:00:00Z",
+      "last_updated": "2026-02-01T12:00:00Z"
+    },
+    "new_state": {
+      "entity_id": "sensor.ecobee_temperature",
+      "state": "71.6",
+      "attributes": {
+        "device_class": "temperature",
+        "unit_of_measurement": "°F"
+      },
+      "last_changed": "2026-02-01T12:05:00Z",
+      "last_updated": "2026-02-01T12:05:00Z"
+    }
+  },
+  "origin": "LOCAL",
+  "time_fired": "2026-02-01T12:05:00Z",
+  "context": {
+    "id": "abcdef123456",
+    "user_id": "1234abcd"
+  }
 }
 ```
 

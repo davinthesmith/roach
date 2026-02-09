@@ -23,7 +23,7 @@ ROACH (Real-time Observability Aggregation Conduit for the Home) is a Kafka-base
 ```bash
 # Configure credentials
 cp .env.example .env
-vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION_ID, POSTGRES_PASSWORD
+vim .env  # Add WEATHERLINK_API_KEY, WEATHERLINK_API_SECRET, WEATHERLINK_STATION_ID, HA_URL, HA_TOKEN, POSTGRES_PASSWORD
 
 # Start system
 ./scripts/start-all.sh          # Normal start
@@ -95,6 +95,12 @@ docker ps                       # Check containers
 - Features: Auto-tag creation, metadata enrichment, orphaned message tracking
 - Performance: Batched writes with COPY protocol, worker pool processing
 
+**homeassistant-kafka** (`roach-homeassistant-kafka`)
+- Language: Go
+- Purpose: Real-time Home Assistant event ingestion (WebSocket → Kafka)
+- Topics Published: `homeassistant.ecobee.*`
+- Filtering: `ecobee` entity_id substring or explicit list (optional)
+
 **weatherlink-kafka** backfill mode
 - Language: Go
 - Purpose: Historical data backfill (API → Kafka)
@@ -153,6 +159,7 @@ roach-network (Docker bridge)
 └── Applications
     ├── weatherlink-kafka (connects to kafka:29092, postgres:5432 [unused])
     ├── weatherlink-sql (connects to kafka:29092, postgres:5432)
+    ├── homeassistant-kafka (connects to kafka:29092, homeassistant:8123)
     └── weatherlink-sql-backfill (connects to kafka:29092, postgres:5432) [manual]
 ```
 
@@ -166,6 +173,10 @@ In `.env` file:
 WEATHERLINK_API_KEY=<your_api_key>
 WEATHERLINK_API_SECRET=<your_api_secret>
 WEATHERLINK_STATION_ID=<your_station_id>
+
+# Home Assistant (Required for homeassistant-kafka)
+HA_URL=http://homeassistant:8123
+HA_TOKEN=<your_long_lived_access_token>
 
 # PostgreSQL (Required)
 POSTGRES_PASSWORD=<secure_password>
@@ -190,6 +201,17 @@ LOG_LEVEL=info                  # debug|info|warn|error
 BATCH_SIZE=100                  # Default (real-time)
 WORKER_POOL_SIZE=4              # Default
 BATCH_FLUSH_INTERVAL_MS=500     # Default
+```
+
+**homeassistant-kafka**:
+```bash
+KAFKA_BROKER=kafka:29092        # Default
+HA_WS_URL=ws://homeassistant:8123/api/websocket  # Optional override
+WS_RECONNECT_BACKOFF=1s,5s,30s  # Reconnect delays
+POLL_ENABLED=false              # REST polling fallback
+POLL_INTERVAL=60s               # Poll interval
+POLL_ENTITY_FILTER=             # Comma-separated entity_ids (optional)
+LOG_LEVEL=info                  # debug|info|warn|error
 ```
 
 **weatherlink-kafka** backfill (optional):
@@ -220,7 +242,7 @@ END_OFFSET=-1                   # -1=latest
 - Data: `./data/kafka`, `./data/zookeeper`, `./data/postgres`
 - Scripts: `./scripts/*.sh`
 - Documentation: `./docs/*.md`
-- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/weatherlink-sql-backfill/`
+- Services: `./services/weatherlink-kafka/`, `./services/weatherlink-sql/`, `./services/homeassistant-kafka/`, `./services/weatherlink-sql-backfill/`
 
 ### Common Customizations
 
@@ -246,14 +268,15 @@ kafka:
 
 ### Service Naming Convention
 
-**Source-Based Pattern**: `weatherlink-{destination}`
-- Services named by their destination (kafka or sql)
+**Source-Based Pattern**: `{source}-{destination}`
+- Services named by source + destination (e.g., weatherlink-kafka, homeassistant-kafka)
 - Real-time services run as daemons
 - Backfill services are one-shot executables
 
 **Services**:
 - **weatherlink-kafka**: Real-time API → Kafka (streaming daemon, optional backfill mode)
 - **weatherlink-sql**: Real-time Kafka → PostgreSQL (streaming daemon)
+- **homeassistant-kafka**: Real-time Home Assistant → Kafka (event stream)
 - **weatherlink-sql-backfill**: Historical Kafka → PostgreSQL (one-shot)
 
 ### weatherlink-kafka Service
@@ -299,6 +322,38 @@ weatherlink-kafka/
 6. Publish to Kafka topics
 
 **Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`
+
+### homeassistant-kafka Service
+
+**Purpose**: Stream Home Assistant `state_changed` events and publish Ecobee updates to Kafka
+
+**Package Structure**:
+```
+homeassistant-kafka/
+├── main.go              # Entry point
+├── config/              # Environment variable parsing
+│   └── config.go
+├── ha/                  # Home Assistant clients (WebSocket + REST)
+│   └── client.go
+├── kafka/               # Kafka producer
+│   └── producer.go
+├── models/              # Event + config models
+│   ├── config.go
+│   └── events.go
+├── service/             # Business logic
+│   └── service.go
+└── Dockerfile
+```
+
+**Key Operations**:
+1. Connect to Home Assistant WebSocket and authenticate
+2. Subscribe to `state_changed` events
+3. Filter Ecobee entities (substring match or explicit list)
+4. Route to `homeassistant.ecobee.*` topics
+5. Publish full event payloads with headers
+6. Optional REST polling fallback when enabled
+
+**Dependencies**: `github.com/confluentinc/confluent-kafka-go/v2`, `github.com/gorilla/websocket`
 
 ### weatherlink-sql Service
 

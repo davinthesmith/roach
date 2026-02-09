@@ -59,6 +59,34 @@ services:
       retries: 3
       start_period: 10s
 
+  homeassistant-kafka:
+    build:
+      context: ./services
+      dockerfile: homeassistant-kafka/Dockerfile
+    container_name: roach-homeassistant-kafka
+    restart: unless-stopped
+    environment:
+      - HA_URL=${HA_URL}
+      - HA_WS_URL=${HA_WS_URL}
+      - HA_TOKEN=${HA_TOKEN}
+      - KAFKA_BROKER=kafka:29092
+      - LOG_LEVEL=info
+      - WS_RECONNECT_BACKOFF=1s,5s,30s
+      - POLL_ENABLED=true
+      - POLL_INTERVAL=5m
+      - POLL_ENTITY_FILTER=${POLL_ENTITY_FILTER}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - roach-network
+    healthcheck:
+      test: pgrep -f homeassistant-kafka || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   weatherlink-kafka-backfill:
     build:
       context: ./services

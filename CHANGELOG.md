@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-02-01
+
+### homeassistant-kafka Service
+
+#### Added
+- **homeassistant-kafka**: WebSocket `state_changed` ingestion from Home Assistant with Ecobee routing to `homeassistant.ecobee.*` topics.
+- **homeassistant-kafka**: Optional REST polling fallback for state changes.
+- **Kafka topics**: Added `homeassistant.ecobee.*` topic schemas and headers.
+- **Configuration**: Added Home Assistant environment variables and service wiring.
+
 ## 2026-01-26
 
 ### weatherlink-kafka Metadata Scheduling and Key Dedup
