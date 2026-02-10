@@ -2,6 +2,14 @@
 
 ## 2026-02-09
 
+### ubiquiti-video-jpg Service
+
+#### Added
+- **ubiquiti-video-jpg**: New service that captures 1 frame/sec per UniFi Protect camera via RTSPS → ffmpeg and writes JPEGs to `./data/streams/unifi/jpg` (configurable `JPG_OUTPUT_DIR`).
+- **Retention**: Configurable `RETENTION` (default 30m); per-camera cleanup every 2 minutes removes files older than retention.
+- **Docker Compose**: Added `ubiquiti-video-jpg` with volume `./data/streams/unifi/jpg`; commented out `ubiquiti-video-kafka` so only one video stream runs at a time.
+- **Documentation**: Service README, CLAUDE.md, docs/architecture.md.
+
 ### ubiquiti-kafka Service
 
 #### Added

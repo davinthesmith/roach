@@ -138,25 +138,50 @@ services:
       retries: 3
       start_period: 10s
 
-  ubiquiti-video-kafka:
+  # Only one video stream at a time: use either ubiquiti-video-kafka or ubiquiti-video-jpg
+  # ubiquiti-video-kafka:
+  #   build:
+  #     context: ./services
+  #     dockerfile: ubiquiti-video-kafka/Dockerfile
+  #   container_name: roach-ubiquiti-video-kafka
+  #   restart: unless-stopped
+  #   environment:
+  #     - UNIFI_API_KEY=${UNIFI_API_KEY}
+  #     - UNIFI_HOST=${UNIFI_HOST}
+  #     - KAFKA_BROKER=kafka:29092
+  #     - LOG_LEVEL=info
+  #     - RECONNECT_BACKOFF=1s,5s,30s
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #   networks:
+  #     - roach-network
+  #   healthcheck:
+  #     test: pgrep -f ubiquiti-video-kafka || exit 1
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+
+  ubiquiti-video-jpg:
     build:
       context: ./services
-      dockerfile: ubiquiti-video-kafka/Dockerfile
-    container_name: roach-ubiquiti-video-kafka
+      dockerfile: ubiquiti-video-jpg/Dockerfile
+    container_name: roach-ubiquiti-video-jpg
     restart: unless-stopped
     environment:
       - UNIFI_API_KEY=${UNIFI_API_KEY}
       - UNIFI_HOST=${UNIFI_HOST}
-      - KAFKA_BROKER=kafka:29092
       - LOG_LEVEL=info
       - RECONNECT_BACKOFF=1s,5s,30s
-    depends_on:
-      kafka:
-        condition: service_healthy
+      - JPG_OUTPUT_DIR=/data/streams/unifi/jpg
+      - RETENTION=10m
+    volumes:
+      - ./data/streams/unifi/jpg:/data/streams/unifi/jpg
     networks:
       - roach-network
     healthcheck:
-      test: pgrep -f ubiquiti-video-kafka || exit 1
+      test: pgrep -f ubiquiti-video-jpg || exit 1
       interval: 30s
       timeout: 5s
       retries: 3
