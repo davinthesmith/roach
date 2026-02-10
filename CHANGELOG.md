@@ -2,24 +2,29 @@
 
 ## 2026-02-09
 
-### ubiquiti-video-jpg Service
+### Rename: ubiquiti → unifi
+
+#### Changed
+- **Service and topic naming**: Renamed all "ubiquiti" to "unifi" (UniFi is the product line; Ubiquiti is the company). Services: `unifi-kafka`, `unifi-video-kafka`, `unifi-video-jpg`. Kafka topics: `unifi.protect.smart`, `unifi.protect.audio`, `unifi.protect.motion`, `unifi.protect.video.*`. Directories: `services/unifi-kafka`, `services/unifi-video-kafka`, `services/unifi-video-jpg`. Docker service and container names updated accordingly.
+
+### unifi-video-jpg Service
 
 #### Added
-- **ubiquiti-video-jpg**: New service that captures 1 frame/sec per UniFi Protect camera via RTSPS → ffmpeg and writes JPEGs to `./data/streams/unifi/jpg` (configurable `JPG_OUTPUT_DIR`).
+- **unifi-video-jpg**: New service that captures 1 frame/sec per UniFi Protect camera via RTSPS → ffmpeg and writes JPEGs to `./data/streams/unifi/jpg` (configurable `JPG_OUTPUT_DIR`).
 - **Retention**: Configurable `RETENTION` (default 30m); per-camera cleanup every 2 minutes removes files older than retention.
-- **Docker Compose**: Added `ubiquiti-video-jpg` with volume `./data/streams/unifi/jpg`; commented out `ubiquiti-video-kafka` so only one video stream runs at a time.
+- **Docker Compose**: Added `unifi-video-jpg` with volume `./data/streams/unifi/jpg`; commented out `unifi-video-kafka` so only one video stream runs at a time.
 - **Documentation**: Service README, CLAUDE.md, docs/architecture.md.
 
-### ubiquiti-kafka Service
+### unifi-kafka Service
 
 #### Added
-- **ubiquiti-kafka**: New service that subscribes to UniFi Protect events via WebSocket (`/proxy/protect/integration/v1/subscribe/events`) and publishes to Kafka.
+- **unifi-kafka**: New service that subscribes to UniFi Protect events via WebSocket (`/proxy/protect/integration/v1/subscribe/events`) and publishes to Kafka.
 - **API client** (`api/client.go`): Connects to local NVR Protect Integration API with API key auth, TLS skip verify for self-signed certs, and WebSocket event subscription.
-- **Event classification**: Routes events to `ubiquiti.protect.smart` (person, vehicle, animal, package), `ubiquiti.protect.audio` (babyCry, coAlarm, smoke, speak), and `ubiquiti.protect.motion`.
+- **Event classification**: Routes events to `unifi.protect.smart` (person, vehicle, animal, package), `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), and `unifi.protect.motion`.
 - **Camera name resolution**: Fetches camera metadata on startup via `/cameras` endpoint for friendly key derivation (e.g., `courtyard:1706140800`).
 - **Kafka producer**: Idempotent `confluent-kafka-go` producer with LZ4 compression, batching, and delivery reports.
 - **Reconnect loop**: Exponential backoff with configurable delays (`RECONNECT_BACKOFF`), resets after 60s of stable connection.
-- **Docker Compose**: Added `ubiquiti-kafka` service definition.
+- **Docker Compose**: Added `unifi-kafka` service definition.
 - **Configuration**: Added `UNIFI_HOST`, `UNIFI_API_KEY` to `.env.example`.
 - **Documentation**: Service README, updated AI-CONTEXT.md, kafka-topics.md with service entry, topics, and config.
 

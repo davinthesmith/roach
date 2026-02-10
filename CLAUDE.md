@@ -14,9 +14,9 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `weatherlink-sql-backfill` — One-shot Kafka → PostgreSQL replay
 - `homeassistant-kafka` — Home Assistant WebSocket → Kafka (Ecobee events)
 - `homeassistant-command` — Kafka → Home Assistant (thermostat `call_service`)
-- `ubiquiti-kafka` — UniFi Protect WebSocket → Kafka (smart/audio/motion)
-- `ubiquiti-video-kafka` — UniFi Protect RTSPS → ffmpeg → Kafka (1 frame/sec per camera, 30-min retention). Commented out in docker-compose; only one video stream at a time.
-- `ubiquiti-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
+- `unifi-kafka` — UniFi Protect WebSocket → Kafka (smart/audio/motion)
+- `unifi-video-kafka` — UniFi Protect RTSPS → ffmpeg → Kafka (1 frame/sec per camera, 30-min retention). Commented out in docker-compose; only one video stream at a time.
+- `unifi-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
 
 **Infrastructure** (from `docker-compose.infrastructure.yml`):
 - Zookeeper: 2181. Kafka: 9092 (external), 29092 (internal). PostgreSQL: 5432. Kafka UI: 8080.
@@ -68,9 +68,9 @@ POSTGRES_PASSWORD=...
 - weatherlink-sql: `BATCH_SIZE=100`, `WORKER_POOL_SIZE=4`, `BATCH_FLUSH_INTERVAL_MS=500`, `DB_POOL_MAX_CONNS=10`
 - homeassistant-kafka: `HA_WS_URL` (derived from HA_URL), `POLL_ENABLED=false`, `POLL_ENTITY_FILTER`
 - homeassistant-command: `KAFKA_TOPIC=homeassistant.command`, `KAFKA_CONSUMER_GROUP=homeassistant-command`
-- ubiquiti-kafka: `RECONNECT_BACKOFF=1s,5s,30s`
-- ubiquiti-video-kafka: `RECONNECT_BACKOFF=1s,5s,30s` (topics: `ubiquiti.protect.video.*`, 30-min retention)
-- ubiquiti-video-jpg: `JPG_OUTPUT_DIR`, `RETENTION=30m`, `RECONNECT_BACKOFF=1s,5s,30s`
+- unifi-kafka: `RECONNECT_BACKOFF=1s,5s,30s`
+- unifi-video-kafka: `RECONNECT_BACKOFF=1s,5s,30s` (topics: `unifi.protect.video.*`, 30-min retention)
+- unifi-video-jpg: `JPG_OUTPUT_DIR`, `RETENTION=30m`, `RECONNECT_BACKOFF=1s,5s,30s`
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
@@ -111,7 +111,7 @@ Full script reference: [scripts/README.md](scripts/README.md).
 
 **Home Assistant**: `homeassistant.ecobee.*` (thermostat, weather, sensor.*, other). Key `friendly_name:timestamp`. Consumed: `homeassistant.command`.
 
-**UniFi Protect**: `ubiquiti.protect.smart` (person, vehicle, animal, package), `ubiquiti.protect.audio` (babyCry, coAlarm, smoke, speak), `ubiquiti.protect.motion`. Key `camera_name:timestamp`. **Video**: `ubiquiti.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
+**UniFi Protect**: `unifi.protect.smart` (person, vehicle, animal, package), `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), `unifi.protect.motion`. Key `camera_name:timestamp`. **Video**: `unifi.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
 
 Full schemas: [docs/kafka-topics.md](docs/kafka-topics.md). Storage/optimization: [docs/kafka-standards.md](docs/kafka-standards.md).
 

@@ -87,11 +87,11 @@ services:
       retries: 3
       start_period: 10s
 
-  ubiquiti-kafka:
+  unifi-kafka:
     build:
       context: ./services
-      dockerfile: ubiquiti-kafka/Dockerfile
-    container_name: roach-ubiquiti-kafka
+      dockerfile: unifi-kafka/Dockerfile
+    container_name: roach-unifi-kafka
     restart: unless-stopped
     environment:
       - UNIFI_API_KEY=${UNIFI_API_KEY}
@@ -105,7 +105,7 @@ services:
     networks:
       - roach-network
     healthcheck:
-      test: pgrep -f ubiquiti-kafka || exit 1
+      test: pgrep -f unifi-kafka || exit 1
       interval: 30s
       timeout: 5s
       retries: 3
@@ -138,12 +138,12 @@ services:
       retries: 3
       start_period: 10s
 
-  # Only one video stream at a time: use either ubiquiti-video-kafka or ubiquiti-video-jpg
-  # ubiquiti-video-kafka:
+  # Only one video stream at a time: use either unifi-video-kafka or unifi-video-jpg
+  # unifi-video-kafka:
   #   build:
   #     context: ./services
-  #     dockerfile: ubiquiti-video-kafka/Dockerfile
-  #   container_name: roach-ubiquiti-video-kafka
+  #     dockerfile: unifi-video-kafka/Dockerfile
+  #   container_name: roach-unifi-video-kafka
   #   restart: unless-stopped
   #   environment:
   #     - UNIFI_API_KEY=${UNIFI_API_KEY}
@@ -157,17 +157,17 @@ services:
   #   networks:
   #     - roach-network
   #   healthcheck:
-  #     test: pgrep -f ubiquiti-video-kafka || exit 1
+  #     test: pgrep -f unifi-video-kafka || exit 1
   #     interval: 30s
   #     timeout: 5s
   #     retries: 3
   #     start_period: 10s
 
-  ubiquiti-video-jpg:
+  unifi-video-jpg:
     build:
       context: ./services
-      dockerfile: ubiquiti-video-jpg/Dockerfile
-    container_name: roach-ubiquiti-video-jpg
+      dockerfile: unifi-video-jpg/Dockerfile
+    container_name: roach-unifi-video-jpg
     restart: unless-stopped
     environment:
       - UNIFI_API_KEY=${UNIFI_API_KEY}
@@ -181,7 +181,7 @@ services:
     networks:
       - roach-network
     healthcheck:
-      test: pgrep -f ubiquiti-video-jpg || exit 1
+      test: pgrep -f unifi-video-jpg || exit 1
       interval: 30s
       timeout: 5s
       retries: 3

@@ -20,7 +20,7 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
   - `weatherlink-sql-backfill`: One-shot Kafka → PostgreSQL backfill
   - `homeassistant-kafka`: Home Assistant WebSocket → Kafka (Ecobee events)
   - `homeassistant-command`: Kafka → Home Assistant (`call_service` commands)
-  - `ubiquiti-kafka`: UniFi Protect WebSocket → Kafka (smart/audio/motion)
+  - `unifi-kafka`: UniFi Protect WebSocket → Kafka (smart/audio/motion)
 
 ### Project layout
 

@@ -40,15 +40,15 @@
 - **Flow**: Headers → device lookup (or orphan) → parse JSON → per field: tag lookup/create (catalog enrichment) → batch writer (numeric/text/null).
 - **Caches**: Device (LSID→Device), Tag (device_id:tag_name→Tag), Catalog (sensor_type:data_structure_type:field_name→FieldMetadata); thread-safe.
 
-### ubiquiti-video-kafka
+### unifi-video-kafka
 - **Flow**: Fetch cameras → per-camera goroutine: POST rtsps-stream → ffmpeg (1 fps MJPEG) → parse JPEG frames → Kafka topic per camera.
-- **Topics**: `ubiquiti.protect.video.{camera_name}` with 30-min retention. Service creates topics via Kafka Admin API.
+- **Topics**: `unifi.protect.video.{camera_name}` with 30-min retention. Service creates topics via Kafka Admin API.
 - **Reconnect**: On ffmpeg exit or RTSPS token expiry, backoff and re-fetch stream URL. Per-camera isolation (one failing camera does not block others).
 
-### ubiquiti-video-jpg
-- **Flow**: Same as ubiquiti-video-kafka but writes JPEG frames to filesystem: `{JPG_OUTPUT_DIR}/{camera_name}/{timestamp}.jpg`.
+### unifi-video-jpg
+- **Flow**: Same as unifi-video-kafka but writes JPEG frames to filesystem: `{JPG_OUTPUT_DIR}/{camera_name}/{timestamp}.jpg`.
 - **Retention**: Configurable `RETENTION` (default 30m); per-camera cleanup every 2 minutes deletes expired files.
-- **Reconnect**: Same backoff and offline polling as ubiquiti-video-kafka. No Kafka dependency. Only one of ubiquiti-video-kafka or ubiquiti-video-jpg should run at a time.
+- **Reconnect**: Same backoff and offline polling as unifi-video-kafka. No Kafka dependency. Only one of unifi-video-kafka or unifi-video-jpg should run at a time.
 
 ## Network
 

@@ -22,19 +22,19 @@ Format: `namespace.category[.subcategory]`. Topics auto-created on first publish
 | weather.metadata.catalog | Field schemas per sensor type (one message per type) | sensor_type:max_data_structure_type |
 | weather.metadata.station | Station name, location, timezone | station_id:weekStart |
 
-## UniFi Protect (ubiquiti-kafka)
+## UniFi Protect (unifi-kafka)
 
 Key: `{camera_name}:{timestamp}` (camera name sanitized: lowercase, spaces→underscores). Timestamp from event `start` (ms→s).
 
 | Topic | Detection types |
 |-------|-----------------|
-| ubiquiti.protect.smart | person, vehicle, animal, package |
-| ubiquiti.protect.audio | babyCry, coAlarm, smoke, speak |
-| ubiquiti.protect.motion | motion |
+| unifi.protect.smart | person, vehicle, animal, package |
+| unifi.protect.audio | babyCry, coAlarm, smoke, speak |
+| unifi.protect.motion | motion |
 
-## UniFi Protect Video (ubiquiti-video-kafka)
+## UniFi Protect Video (unifi-video-kafka)
 
-Topic per camera: `ubiquiti.protect.video.{camera_name}` (camera name sanitized: lowercase, spaces/dashes→underscores). **Retention: 30 minutes** (`retention.ms=1800000`); topics created by the service via Kafka Admin API. No maintainer cleanup needed.
+Topic per camera: `unifi.protect.video.{camera_name}` (camera name sanitized: lowercase, spaces/dashes→underscores). **Retention: 30 minutes** (`retention.ms=1800000`); topics created by the service via Kafka Admin API. No maintainer cleanup needed.
 
 Key: `{camera_id}:{timestamp}`. Value: raw JPEG frame bytes (binary, ~1 frame/sec).
 
