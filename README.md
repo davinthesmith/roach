@@ -7,12 +7,13 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
 - **PostgreSQL materialization** with `devices` / `tags` / `records_*` hierarchy
 - **WeatherLink integration** for outdoor/indoor weather data and rich metadata
 - **Home Assistant (Ecobee)** streaming and thermostat command handling
-- **UniFi Protect** smart video/audio/motion event ingestion
+- **UniFi Protect** smart/audio/motion events, frame capture (jpg/video), and smart-event image archiving
+- **Person detection** (macOS): CoreML classifier on archived frames → Kafka `detect.person`
 - **Two-stage backfill** (API→Kafka, Kafka→DB) for recovery and reconstruction
 
 ### Architecture
 
-- **Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+
+- **Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (detect-person)
 - **Data flow**: IoT → service → Kafka → PostgreSQL view (`records`) → SQL
 - **Services**:
   - `weatherlink-kafka`: WeatherLink API → Kafka (real-time + optional backfill)
@@ -21,6 +22,9 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
   - `homeassistant-kafka`: Home Assistant WebSocket → Kafka (Ecobee events)
   - `homeassistant-command`: Kafka → Home Assistant (`call_service` commands)
   - `unifi-kafka`: UniFi Protect WebSocket → Kafka (smart/audio/motion)
+  - `unifi-video-jpg`: UniFi Protect RTSP → ffmpeg → filesystem (1 frame/sec per camera)
+  - `unifi-smart-archive`: Consumes `unifi.protect.smart`; archives event-window JPEGs to `data/streams/unifi/protect`
+  - `detect-person`: Native macOS Swift service — CoreML person classification on archived images → Kafka `detect.person` (run via `scripts/detect-person/`)
 
 ### Project layout
 
@@ -29,10 +33,10 @@ roach/
 ├── docker-compose.infrastructure.yml   # Kafka, Zookeeper, Postgres, Kafka UI
 ├── docker-compose.yml                  # Application services
 ├── CLAUDE.md                           # Single-file context for AI/maintainers
-├── scripts/                            # Ops scripts (start, status, logs, db, backfill)
+├── scripts/                            # Ops scripts (start, status, logs, db, backfill, detect-person)
 ├── docs/                               # Architecture, operations, topics, standards
-├── services/                           # Go services (each with its own README)
-└── data/                               # Kafka / Zookeeper / Postgres volumes
+├── services/                           # Go services + detect-person (Swift); each with its own README
+└── data/                               # Kafka / Zookeeper / Postgres / streams / train / models
 ```
 
 ### Quick start
@@ -101,6 +105,15 @@ Common commands:
 # Backfill
 BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.sh
 ./scripts/weatherlink/sql-backfill.sh [--metadata] [--topics ...]
+
+# Person detection (macOS only)
+./scripts/detect-person/build/build.sh [release]
+./scripts/detect-person/train/train.sh
+./scripts/detect-person/run/detect.sh   # foreground
+./scripts/detect-person/run/start.sh    # daemon
+./scripts/detect-person/run/stop.sh
+./scripts/detect-person/run/status.sh
+./scripts/detect-person/launchd/install-launchd.sh   # Auto-start at login
 ```
 
 More detail:
