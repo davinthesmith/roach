@@ -187,6 +187,39 @@ services:
       retries: 3
       start_period: 10s
 
+  unifi-smart-archive:
+    build:
+      context: ./services
+      dockerfile: unifi-smart-archive/Dockerfile
+    container_name: roach-unifi-smart-archive
+    restart: unless-stopped
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - KAFKA_TOPIC=unifi.protect.smart
+      - KAFKA_CONSUMER_GROUP=unifi-smart-archive
+      - EVENT_END_TIMEOUT=1m
+      - SOURCE_DIR=/data/streams/unifi/jpg
+      - ARCHIVE_DIR=/data/streams/unifi/protect
+      - LEAD_SECONDS=60
+      - TRAIL_SECONDS=60
+      - COPY_DELAY_SECONDS=5
+      - ARCHIVE_RETENTION_DAYS=10
+      - LOG_LEVEL=info
+    volumes:
+      - ./data/streams/unifi/jpg:/data/streams/unifi/jpg:ro
+      - ./data/streams/unifi/protect:/data/streams/unifi/protect
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - roach-network
+    healthcheck:
+      test: pgrep -f unifi-smart-archive || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   weatherlink-kafka-backfill:
     build:
       context: ./services

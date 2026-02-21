@@ -26,11 +26,11 @@ Format: `namespace.category[.subcategory]`. Topics auto-created on first publish
 
 Key: `{camera_name}:{timestamp}` (camera name sanitized: lowercase, spaces→underscores). Timestamp from event `start` (ms→s).
 
-| Topic | Detection types |
-|-------|-----------------|
-| unifi.protect.smart | person, vehicle, animal, package |
-| unifi.protect.audio | babyCry, coAlarm, smoke, speak |
-| unifi.protect.motion | motion |
+| Topic | Detection types | Consumer |
+|-------|-----------------|----------|
+| unifi.protect.smart | person, vehicle, animal, package | unifi-smart-archive (image archiving) |
+| unifi.protect.audio | babyCry, coAlarm, smoke, speak | — |
+| unifi.protect.motion | motion | — |
 
 ## UniFi Protect Video (unifi-video-kafka)
 

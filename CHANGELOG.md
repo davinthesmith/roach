@@ -2,6 +2,17 @@
 
 ## 2026-02-09
 
+### unifi-smart-archive Service
+
+#### Added
+- **unifi-smart-archive**: New service that consumes `unifi.protect.smart` and copies event time-window JPEGs from unifi-video-jpg output to a long-term archive.
+- **Logic**: Only events with `end` are archived. Window: 1 min before event start, 1 min after event end; copy runs after end+trail+delay so trailing frames exist. Path: `{ARCHIVE_DIR}/smart/{detection_type}/{camera_name}/{start_sec}/{timestamp}.jpg`.
+- **Event end timeout**: Multiple messages per event (middle ones without `end`, final with `end`). If no message for a given event within `EVENT_END_TIMEOUT` (default 1m), stop waiting for end and do not archive that event; process keeps running.
+- **Retention**: Archive content older than 10 days (configurable `ARCHIVE_RETENTION_DAYS`) is deleted periodically.
+- **Failure behavior**: Exits on Kafka consumer or commit error; no indefinite retry. Restart via Docker/orchestrator.
+- **Docker Compose**: Added `unifi-smart-archive` with read-only mount of `./data/streams/unifi/jpg`, read-write mount of `./data/streams/unifi/protect`.
+- **Documentation**: Service README, CLAUDE.md, docs/architecture.md, docs/kafka-topics.md.
+
 ### Rename: ubiquiti → unifi
 
 #### Changed

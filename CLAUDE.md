@@ -1,6 +1,6 @@
 # ROACH — Real-time Observability Aggregation Conduit for the Home
 
-Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Seven Go services (5 daemons, 2 backfill/tools).
+Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools).
 
 ## Architecture
 
@@ -17,6 +17,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `unifi-kafka` — UniFi Protect WebSocket → Kafka (smart/audio/motion)
 - `unifi-video-kafka` — UniFi Protect RTSPS → ffmpeg → Kafka (1 frame/sec per camera, 30-min retention). Commented out in docker-compose; only one video stream at a time.
 - `unifi-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
+- `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (10-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
 
 **Infrastructure** (from `docker-compose.infrastructure.yml`):
 - Zookeeper: 2181. Kafka: 9092 (external), 29092 (internal). PostgreSQL: 5432. Kafka UI: 8080.
@@ -71,6 +72,7 @@ POSTGRES_PASSWORD=...
 - unifi-kafka: `RECONNECT_BACKOFF=1s,5s,30s`
 - unifi-video-kafka: `RECONNECT_BACKOFF=1s,5s,30s` (topics: `unifi.protect.video.*`, 30-min retention)
 - unifi-video-jpg: `JPG_OUTPUT_DIR`, `RETENTION=30m`, `RECONNECT_BACKOFF=1s,5s,30s`
+- unifi-smart-archive: `SOURCE_DIR`, `ARCHIVE_DIR`, `EVENT_END_TIMEOUT=1m` (stop waiting for event end), `ARCHIVE_RETENTION_DAYS=10`, `LEAD_SECONDS`, `TRAIL_SECONDS`
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
@@ -111,7 +113,7 @@ Full script reference: [scripts/README.md](scripts/README.md).
 
 **Home Assistant**: `homeassistant.ecobee.*` (thermostat, weather, sensor.*, other). Key `friendly_name:timestamp`. Consumed: `homeassistant.command`.
 
-**UniFi Protect**: `unifi.protect.smart` (person, vehicle, animal, package), `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), `unifi.protect.motion`. Key `camera_name:timestamp`. **Video**: `unifi.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
+**UniFi Protect**: `unifi.protect.smart` (person, vehicle, animal, package); consumed by unifi-smart-archive for image archiving. `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), `unifi.protect.motion`. Key `camera_name:timestamp`. **Video**: `unifi.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
 
 Full schemas: [docs/kafka-topics.md](docs/kafka-topics.md). Storage/optimization: [docs/kafka-standards.md](docs/kafka-standards.md).
 

@@ -50,6 +50,11 @@
 - **Retention**: Configurable `RETENTION` (default 30m); per-camera cleanup every 2 minutes deletes expired files.
 - **Reconnect**: Same backoff and offline polling as unifi-video-kafka. No Kafka dependency. Only one of unifi-video-kafka or unifi-video-jpg should run at a time.
 
+### unifi-smart-archive
+- **Flow**: Consumes `unifi.protect.smart`; only events with `end` are archived. Schedules copy job for `end + trail + copyDelay`; copy worker copies frames in [start−lead, end+trail] from SOURCE_DIR (unifi-video-jpg output) to ARCHIVE_DIR (`smart/{detection_type}/{camera_name}/{start_sec}/`).
+- **Retention**: Archive content older than ARCHIVE_RETENTION_DAYS (default 10) is deleted periodically.
+- **Failure**: Stops waiting for event end if no message for that event within EVENT_END_TIMEOUT (no archive for that event). Exits on consumer/commit error; no indefinite retry. Restart via orchestrator.
+
 ## Network
 
 | From | To | Address | Purpose |
@@ -57,6 +62,7 @@
 | weatherlink-kafka | Kafka | kafka:29092 | Publish |
 | weatherlink-sql | Kafka | kafka:29092 | Consume |
 | weatherlink-sql | PostgreSQL | postgres:5432 | Materialize |
+| unifi-smart-archive | Kafka | kafka:29092 | Consume |
 | kafka-ui | Kafka | kafka:29092 | Monitor |
 | Kafka | Zookeeper | zookeeper:2181 | Coordination |
 | Host | Kafka / PG / UI | localhost:9092, 5432, 8080 | External access |
