@@ -19,12 +19,14 @@ import (
 )
 
 // PendingJob is a copy job scheduled for after copyAfterUnix.
+// One job per (camera, detection_type); overlapping/adjacent events are merged (EventIDs holds all).
 type PendingJob struct {
 	CameraName    string
 	DetectionType string
 	StartMs       int64
 	EndMs         int64
 	CopyAfterUnix int64
+	EventIDs      []string // all event IDs merged into this job; marked done when copy runs
 }
 
 // WaitingEvent is an event we've seen (start only) and are waiting for a final message with end.
@@ -40,7 +42,7 @@ type WaitingEvent struct {
 type Service struct {
 	cfg           models.Config
 	reader        *kafka.Reader
-	pending       map[string]*PendingJob  // event ID -> copy job (has end)
+	pending       map[string]*PendingJob  // cameraKey(camera, type) -> copy job (merged window)
 	waitingForEnd map[string]*WaitingEvent // event ID -> waiting for final message with end
 	done          map[string]struct{}     // event IDs already copied (avoid double copy on redelivery)
 	mu            sync.Mutex
@@ -130,19 +132,39 @@ func (s *Service) processMessage(ctx context.Context, msg kafka.Message) {
 	}
 
 	if event.HasEnd() {
-		// Final message: schedule copy and stop waiting for this event
+		// Final message: create or merge into the one pending job per (camera, type)
 		delete(s.waitingForEnd, event.ID)
 		copyAfterUnix := event.End/1000 + int64(s.cfg.TrailSeconds) + int64(s.cfg.CopyDelaySeconds)
-		s.pending[event.ID] = &PendingJob{
-			CameraName:    cameraName,
-			DetectionType: detectionType,
-			StartMs:       event.Start,
-			EndMs:         event.End,
-			CopyAfterUnix: copyAfterUnix,
-		}
-		if s.cfg.LogLevel == "debug" {
-			log.Printf("DEBUG: scheduled copy for event %s at %d (camera=%s type=%s)",
-				event.ID, copyAfterUnix, cameraName, detectionType)
+		key := cameraKey(cameraName, detectionType)
+		if existing, ok := s.pending[key]; ok {
+			// Merge: extend window, push copyAfter to latest end, add event ID
+			if event.Start < existing.StartMs {
+				existing.StartMs = event.Start
+			}
+			if event.End > existing.EndMs {
+				existing.EndMs = event.End
+			}
+			if copyAfterUnix > existing.CopyAfterUnix {
+				existing.CopyAfterUnix = copyAfterUnix
+			}
+			existing.EventIDs = append(existing.EventIDs, event.ID)
+			if s.cfg.LogLevel == "debug" {
+				log.Printf("DEBUG: merged event %s into job %s (camera=%s type=%s)",
+					event.ID, key, cameraName, detectionType)
+			}
+		} else {
+			s.pending[key] = &PendingJob{
+				CameraName:    cameraName,
+				DetectionType: detectionType,
+				StartMs:       event.Start,
+				EndMs:         event.End,
+				CopyAfterUnix: copyAfterUnix,
+				EventIDs:      []string{event.ID},
+			}
+			if s.cfg.LogLevel == "debug" {
+				log.Printf("DEBUG: scheduled copy for event %s at %d (camera=%s type=%s)",
+					event.ID, copyAfterUnix, cameraName, detectionType)
+			}
 		}
 		return
 	}
@@ -173,6 +195,11 @@ func sanitizeName(name string) string {
 	name = strings.ReplaceAll(name, " ", "_")
 	name = strings.ReplaceAll(name, "-", "_")
 	return name
+}
+
+// cameraKey returns a stable key for one pending job per (camera, detection type).
+func cameraKey(cameraName, detectionType string) string {
+	return cameraName + "|" + detectionType
 }
 
 // runWorker runs the copy and retention passes on a ticker.
@@ -224,22 +251,24 @@ func (s *Service) runCopyPass() {
 	s.mu.Lock()
 	now := time.Now().Unix()
 	var toRun []*PendingJob
-	var ids []string
-	for id, job := range s.pending {
+	var keys []string
+	for key, job := range s.pending {
 		if now >= job.CopyAfterUnix {
 			toRun = append(toRun, job)
-			ids = append(ids, id)
+			keys = append(keys, key)
 		}
 	}
-	for _, id := range ids {
-		delete(s.pending, id)
+	for _, key := range keys {
+		delete(s.pending, key)
 	}
 	s.mu.Unlock()
 
-	for i, job := range toRun {
+	for _, job := range toRun {
 		s.copyWindow(job)
 		s.mu.Lock()
-		s.done[ids[i]] = struct{}{}
+		for _, id := range job.EventIDs {
+			s.done[id] = struct{}{}
+		}
 		s.mu.Unlock()
 	}
 }
@@ -263,7 +292,11 @@ func (s *Service) copyWindow(job *PendingJob) {
 		}
 		copied++
 	}
-	log.Printf("Archived event %s/%s %s: %d frames -> %s", job.DetectionType, job.CameraName, strconv.FormatInt(startSec, 10), copied, archiveBase)
+	eventDesc := strconv.FormatInt(startSec, 10)
+	if len(job.EventIDs) > 1 {
+		eventDesc = eventDesc + " (" + strconv.Itoa(len(job.EventIDs)) + " events)"
+	}
+	log.Printf("Archived %s/%s %s: %d frames -> %s", job.DetectionType, job.CameraName, eventDesc, copied, archiveBase)
 }
 
 func copyFile(src, dst string) error {

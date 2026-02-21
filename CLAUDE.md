@@ -1,6 +1,6 @@
 # ROACH — Real-time Observability Aggregation Conduit for the Home
 
-Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + one native macOS Swift service (detect-person).
+Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + two native macOS Swift services (detect-person, detect-person-stream).
 
 ## Architecture
 
@@ -19,6 +19,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `unifi-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
 - `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (30-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
 - `detect-person` — Native macOS Swift service (not Docker). CoreML/CreateML person classification on archived images. Two modes: `train` (labeled images → model) and `detect` (FSEvents watcher → classify → Kafka `detect.person`). Runs on host via `scripts/detect-person/`
+- `detect-person-stream` — Native macOS Swift service (not Docker). Connects to UniFi Protect RTSPS streams (like unifi-video-jpg), samples frames with AVFoundation, runs same person classifier as detect-person, publishes to `detect.person` (source: detect-person-stream). Runs on host via `scripts/detect-person-stream/`
 
 **Infrastructure** (from `docker-compose.infrastructure.yml`):
 - Zookeeper: 2181. Kafka: 9092 (external), 29092 (internal). PostgreSQL: 5432. Kafka UI: 8080.
@@ -31,7 +32,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 ```
 roach/
 ├── services/<name>/         # main.go, Dockerfile, README.md, config/, service/, ...
-├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/
+├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/, detect-person-stream/
 ├── docs/                    # architecture, operations, troubleshooting, go-standards, kafka-topics, migrations
 ├── docker-compose.yml       # Application services
 ├── docker-compose.infrastructure.yml
@@ -76,6 +77,7 @@ POSTGRES_PASSWORD=...
 - unifi-smart-archive: `SOURCE_DIR`, `ARCHIVE_DIR`, `EVENT_END_TIMEOUT=1m` (stop waiting for event end), `ARCHIVE_RETENTION_DAYS=10`, `LEAD_SECONDS`, `TRAIL_SECONDS`
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
 - detect-person: `KAFKA_BROKER=localhost:9092` (host, not Docker), `KAFKA_TOPIC=detect.person`, `WATCH_DIR`, `TRAIN_DIR`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `MAX_ALTERNATIVES=5`, `DEBOUNCE_SECONDS=1.0`
+- detect-person-stream: `UNIFI_HOST`, `UNIFI_API_KEY` (required), `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.person`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `FRAME_INTERVAL=1.0`, `RECONNECT_BACKOFF=1s,5s,30s`
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
 

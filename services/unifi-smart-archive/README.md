@@ -5,9 +5,9 @@ Consumes UniFi Protect **smart** events from Kafka and copies the corresponding 
 ## Flow
 
 1. Consume `unifi.protect.smart` (key: `camera_name:timestamp`, value: event JSON with `id`, `start`, `end`, `smartDetectTypes`). You may receive multiple messages per event; the final one has `end`.
-2. When an event has `end`, schedule a copy job for `end + trail + copyDelay` (so trailing frames exist).
+2. When an event has `end`, create or merge into the single pending copy job for that `(camera_name, detection_type)`. Overlapping or adjacent events for the same camera and type are coalesced into one time window and one archive directory (earliest start used for the path).
 3. If an event has only `start` (waiting for final message), we track it. If no message for that event within `EVENT_END_TIMEOUT`, we stop waiting and do not archive it (e.g. connection problem).
-4. Copy worker: for each due job, copy frames in `[start - lead, end + trail]` from source dir to archive.
+4. Copy worker: for each due job (at most one per camera per detection type), copy frames in `[start - lead, end + trail]` from source dir to archive. Merged jobs use the combined time window.
 5. Retention: periodically delete archive event directories older than `ARCHIVE_RETENTION_DAYS`.
 
 ## Path layout

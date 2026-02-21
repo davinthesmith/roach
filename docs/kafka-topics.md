@@ -32,6 +32,8 @@ Key: `{camera_name}:{timestamp}` (camera name sanitized: lowercase, spaces→und
 | unifi.protect.audio | babyCry, coAlarm, smoke, speak | — |
 | unifi.protect.motion | motion | — |
 
+Multiple distinct smart events per camera (overlapping or adjacent) can occur; unifi-smart-archive coalesces them per camera and detection type into one archive window per stream.
+
 ## UniFi Protect Video (unifi-video-kafka)
 
 Topic per camera: `unifi.protect.video.{camera_name}` (camera name sanitized: lowercase, spaces/dashes→underscores). **Retention: 30 minutes** (`retention.ms=1800000`); topics created by the service via Kafka Admin API. No maintainer cleanup needed.

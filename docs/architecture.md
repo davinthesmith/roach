@@ -51,7 +51,7 @@
 - **Reconnect**: Same backoff and offline polling as unifi-video-kafka. No Kafka dependency. Only one of unifi-video-kafka or unifi-video-jpg should run at a time.
 
 ### unifi-smart-archive
-- **Flow**: Consumes `unifi.protect.smart`; only events with `end` are archived. Schedules copy job for `end + trail + copyDelay`; copy worker copies frames in [start−lead, end+trail] from SOURCE_DIR (unifi-video-jpg output) to ARCHIVE_DIR (`smart/{detection_type}/{camera_name}/{start_sec}/`).
+- **Flow**: Consumes `unifi.protect.smart`; only events with `end` are archived. At most one pending job per (camera, detection_type); overlapping or adjacent events are coalesced into one time window and one archive directory. Schedules copy job for `end + trail + copyDelay`; copy worker copies frames in [start−lead, end+trail] from SOURCE_DIR (unifi-video-jpg output) to ARCHIVE_DIR (`smart/{detection_type}/{camera_name}/{start_sec}/`).
 - **Retention**: Archive content older than ARCHIVE_RETENTION_DAYS (default 10) is deleted periodically.
 - **Failure**: Stops waiting for event end if no message for that event within EVENT_END_TIMEOUT (no archive for that event). Exits on consumer/commit error; no indefinite retry. Restart via orchestrator.
 

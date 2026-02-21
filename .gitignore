@@ -16,6 +16,10 @@ data/
 *.out
 go.work
 
+# Swift files
+.build/
+.swiftpm/
+
 # IDE
 .vscode/
 .idea/
