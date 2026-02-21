@@ -1,10 +1,10 @@
 # ROACH — Real-time Observability Aggregation Conduit for the Home
 
-Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools).
+Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + one native macOS Swift service (detect-person).
 
 ## Architecture
 
-**Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+
+**Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (detect-person)
 
 **Data flow**: IoT → Service → Kafka (infinite) → PostgreSQL. Two-stage backfill: (1) API→Kafka via weatherlink-kafka backfill mode; (2) Kafka→DB via weatherlink-sql-backfill.
 
@@ -17,7 +17,8 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `unifi-kafka` — UniFi Protect WebSocket → Kafka (smart/audio/motion)
 - `unifi-video-kafka` — UniFi Protect RTSPS → ffmpeg → Kafka (1 frame/sec per camera, 30-min retention). Commented out in docker-compose; only one video stream at a time.
 - `unifi-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
-- `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (10-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
+- `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (30-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
+- `detect-person` — Native macOS Swift service (not Docker). CoreML/CreateML person classification on archived images. Two modes: `train` (labeled images → model) and `detect` (FSEvents watcher → classify → Kafka `detect.person`). Runs on host via `scripts/detect-person/`
 
 **Infrastructure** (from `docker-compose.infrastructure.yml`):
 - Zookeeper: 2181. Kafka: 9092 (external), 29092 (internal). PostgreSQL: 5432. Kafka UI: 8080.
@@ -30,7 +31,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 ```
 roach/
 ├── services/<name>/         # main.go, Dockerfile, README.md, config/, service/, ...
-├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/
+├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/
 ├── docs/                    # architecture, operations, troubleshooting, go-standards, kafka-topics, migrations
 ├── docker-compose.yml       # Application services
 ├── docker-compose.infrastructure.yml
@@ -74,6 +75,7 @@ POSTGRES_PASSWORD=...
 - unifi-video-jpg: `JPG_OUTPUT_DIR`, `RETENTION=30m`, `RECONNECT_BACKOFF=1s,5s,30s`
 - unifi-smart-archive: `SOURCE_DIR`, `ARCHIVE_DIR`, `EVENT_END_TIMEOUT=1m` (stop waiting for event end), `ARCHIVE_RETENTION_DAYS=10`, `LEAD_SECONDS`, `TRAIL_SECONDS`
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
+- detect-person: `KAFKA_BROKER=localhost:9092` (host, not Docker), `KAFKA_TOPIC=detect.person`, `WATCH_DIR`, `TRAIN_DIR`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `MAX_ALTERNATIVES=5`, `DEBOUNCE_SECONDS=1.0`
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
 
@@ -99,6 +101,16 @@ docker stats
 # Backfill
 BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.sh
 ./scripts/weatherlink/sql-backfill.sh [--topics ...] [--metadata]
+
+# detect-person (native macOS, not Docker)
+./scripts/detect-person/build/build.sh [release]     # Build Swift package
+./scripts/detect-person/train/train.sh              # Train model from data/train/
+./scripts/detect-person/run/detect.sh               # Run detection (foreground)
+./scripts/detect-person/run/start.sh                # Start detection daemon
+./scripts/detect-person/run/stop.sh                 # Stop daemon
+./scripts/detect-person/run/status.sh               # Diagnostics
+./scripts/detect-person/run/logs.sh [lines]          # Tail log file
+./scripts/detect-person/launchd/install-launchd.sh  # Auto-start at login
 ```
 
 **Kafka**: List topics / consumer groups / consume: use `docker exec roach-kafka kafka-topics ...` and `kafka-console-consumer` / `kafka-consumer-groups` (see [docs/operations.md](docs/operations.md)).
@@ -114,6 +126,8 @@ Full script reference: [scripts/README.md](scripts/README.md).
 **Home Assistant**: `homeassistant.ecobee.*` (thermostat, weather, sensor.*, other). Key `friendly_name:timestamp`. Consumed: `homeassistant.command`.
 
 **UniFi Protect**: `unifi.protect.smart` (person, vehicle, animal, package); consumed by unifi-smart-archive for image archiving. `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), `unifi.protect.motion`. Key `camera_name:timestamp`. **Video**: `unifi.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
+
+**Person Detection** (detect-person): `detect.person`. Key `person_name:image_timestamp`. Headers: `schema_version`, `camera_name`, `event_start`, `timestamp`, `source`. Body: JSON with `person`, `confidence`, `alternatives`, `image_path`, `camera_name`, `event_start`, `image_timestamp`.
 
 Full schemas: [docs/kafka-topics.md](docs/kafka-topics.md). Storage/optimization: [docs/kafka-standards.md](docs/kafka-standards.md).
 

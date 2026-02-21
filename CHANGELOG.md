@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-02-21
+
+### detect-person Service
+
+#### Added
+- **detect-person**: New native macOS Swift service for person classification using CoreML and CreateML. Not Docker — runs on host with Apple Silicon.
+- **Train mode**: `MLImageClassifier` trained from labeled directories (`data/train/{person_name}/*.jpg`). Saves compiled CoreML model to `data/models/detect-person/PersonClassifier.mlmodelc`.
+- **Detect mode**: FSEvents watcher on `data/streams/unifi/protect/smart/person/` classifies new images via `VNCoreMLRequest` and publishes results to Kafka topic `detect.person` when confidence exceeds threshold.
+- **Kafka message**: Topic `detect.person`, key `{person}:{image_timestamp}`, body includes `person`, `confidence`, `alternatives` (with scores), `image_path`, `camera_name`, `event_start`, `image_timestamp`.
+- **Scripts**: `scripts/detect-person/` with `build/build.sh`, `train/train.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`, `run/run-daemon.sh`, `launchd/install-launchd.sh`, `launchd/uninstall-launchd.sh`.
+- **Auto-start on reboot**: LaunchAgent support so detect-person starts at login and restarts after reboot or crash. Install with `./scripts/detect-person/launchd/install-launchd.sh`; uses `run/run-daemon.sh` and `.env` for config.
+- **Dependencies**: swift-argument-parser, swift-kafka-client, swift-log, swift-service-lifecycle.
+- **Documentation**: Service README, updated kafka-topics.md, scripts/README.md, CLAUDE.md.
+
+#### Changed
+- **Script layout**: detect-person scripts reorganized into subdirectories: `build/`, `train/`, `run/`, `launchd/` (was flat in `scripts/detect-person/`).
+
+### unifi-smart-archive
+
+#### Changed
+- **Retention**: Default archive retention increased from 10 days to 30 days (`ARCHIVE_RETENTION_DAYS` default and docker-compose default).
+- **Lead and Lag**: Remove lead and lag time (set to 0) for captures
+
 ## 2026-02-09
 
 ### unifi-smart-archive Service

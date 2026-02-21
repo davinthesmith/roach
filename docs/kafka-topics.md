@@ -47,6 +47,18 @@ Key: `{camera_id}:{timestamp}`. Value: raw JPEG frame bytes (binary, ~1 frame/se
 | source | unifi-protect-video |
 | content_type | image/jpeg |
 
+## Person Detection (detect-person)
+
+Key: `{person_name}:{image_timestamp}`. Published when classification confidence exceeds threshold.
+
+| Topic | Description | Consumer |
+|-------|-------------|----------|
+| detect.person | Person classification results from CoreML | — |
+
+**Headers**: `schema_version`, `camera_name`, `event_start`, `timestamp`, `source`.
+
+**Body**: JSON with `person`, `confidence`, `alternatives` (array of `{person, confidence}`), `image_path`, `camera_name`, `event_start`, `image_timestamp`.
+
 ## Home Assistant Ecobee (homeassistant-kafka)
 
 Key: `{friendly_name}:{timestamp}` (entity_id minus domain and topic-redundant suffix).

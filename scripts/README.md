@@ -481,6 +481,145 @@ Send thermostat commands to the `homeassistant.command` Kafka topic for the `hom
 
 ---
 
+## Person Detection (detect-person)
+
+Native macOS service scripts. Unlike other services, detect-person runs on the host (not Docker) using CoreML/CreateML. All scripts run from project root.
+
+**Layout:** Scripts are grouped under `scripts/detect-person/`:
+- **build/** — build Swift package
+- **train/** — train model from labeled images
+- **run/** — detect (foreground), start/stop daemon, status, logs
+- **launchd/** — install/uninstall LaunchAgent for auto-start at login
+
+**Prerequisites:** macOS 14+, Swift 5.9+, `openssl@3` (`brew install openssl@3`), Kafka running.
+
+### detect-person/build/build.sh
+
+Build the Swift package.
+
+**Usage:**
+```bash
+./scripts/detect-person/build/build.sh [release]
+```
+
+**Options:**
+- `release` - Optimized build (slower compile, faster runtime)
+
+---
+
+### detect-person/train/train.sh
+
+Train the person classification model from labeled images.
+
+**Usage:**
+```bash
+./scripts/detect-person/train/train.sh [--train-dir <path>] [--model-dir <path>] [--max-iterations <n>]
+```
+
+**Training data layout:**
+```
+data/train/
+├── person_name_1/
+│   ├── img001.jpg
+│   └── img002.jpg
+└── person_name_2/
+    └── img001.jpg
+```
+
+**Output:** Compiled CoreML model at `data/models/detect-person/PersonClassifier.mlmodelc`
+
+---
+
+### detect-person/run/detect.sh
+
+Run detection in foreground (interactive). Ctrl+C to stop.
+
+**Usage:**
+```bash
+./scripts/detect-person/run/detect.sh [--watch-dir <path>]
+```
+
+**Environment:** `KAFKA_BROKER`, `WATCH_DIR`, `CONFIDENCE_THRESHOLD`, `MAX_ALTERNATIVES`, `LOG_LEVEL`
+
+---
+
+### detect-person/run/start.sh
+
+Start detection as a background daemon.
+
+**Usage:**
+```bash
+./scripts/detect-person/run/start.sh
+```
+
+**Output:**
+- Logs: `data/logs/detect-person.log`
+- PID: `data/logs/detect-person.pid`
+
+---
+
+### detect-person/run/stop.sh
+
+Stop the background daemon (graceful SIGTERM, forced SIGKILL after 10s).
+
+**Usage:**
+```bash
+./scripts/detect-person/run/stop.sh
+```
+
+---
+
+### detect-person/run/status.sh
+
+Show diagnostics: process status, model info, training data stats, watch directory, Kafka topic.
+
+**Usage:**
+```bash
+./scripts/detect-person/run/status.sh
+```
+
+---
+
+### detect-person/run/logs.sh
+
+Tail the log file.
+
+**Usage:**
+```bash
+./scripts/detect-person/run/logs.sh [lines]
+```
+
+**Options:**
+- `lines` - Number of initial lines to show (default: 50)
+
+---
+
+### detect-person/launchd/install-launchd.sh
+
+Install detect-person as a **LaunchAgent** so it starts automatically when you log in and restarts after a reboot (or if the process exits).
+
+**Usage:**
+```bash
+./scripts/detect-person/launchd/install-launchd.sh
+```
+
+**Effect:** Installs `~/Library/LaunchAgents/com.roach.detect-person.plist`, loads it, and starts the service. Logs go to `data/logs/detect-person.log`. Environment is loaded from project root `.env` (e.g. `KAFKA_BROKER`).
+
+**Note:** Do not use `run/start.sh` when using launchd; use one or the other.
+
+---
+
+### detect-person/launchd/uninstall-launchd.sh
+
+Remove the LaunchAgent and stop auto-start.
+
+**Usage:**
+```bash
+./scripts/detect-person/launchd/uninstall-launchd.sh
+```
+
+---
+
 ## Backfill Operations
 
 ### weatherlink/kafka-backfill.sh

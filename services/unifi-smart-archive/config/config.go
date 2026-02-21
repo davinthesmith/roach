@@ -22,9 +22,9 @@ func Load() models.Config {
 	lead := parseIntEnv("LEAD_SECONDS", 0)
 	trail := parseIntEnv("TRAIL_SECONDS", 0)
 	copyDelay := parseIntEnv("COPY_DELAY_SECONDS", 5)
-	retentionDays := parseIntEnv("ARCHIVE_RETENTION_DAYS", 10)
+	retentionDays := parseIntEnv("ARCHIVE_RETENTION_DAYS", 30)
 	if retentionDays < 1 {
-		retentionDays = 10
+		retentionDays = 30
 	}
 
 	return models.Config{

@@ -1,6 +1,6 @@
 # unifi-smart-archive
 
-Consumes UniFi Protect **smart** events from Kafka and copies the corresponding time-window of JPEG frames (from unifi-video-jpg output) into a long-term archive. Only events that include an `end` time are archived. Archive files are retained for a configurable number of days (default 10).
+Consumes UniFi Protect **smart** events from Kafka and copies the corresponding time-window of JPEG frames (from unifi-video-jpg output) into a long-term archive. Only events that include an `end` time are archived. Archive files are retained for a configurable number of days (default 30).
 
 ## Flow
 
@@ -29,7 +29,7 @@ Consumes UniFi Protect **smart** events from Kafka and copies the corresponding 
 | LEAD_SECONDS | 60 | Seconds before event start to include |
 | TRAIL_SECONDS | 60 | Seconds after event end to include |
 | COPY_DELAY_SECONDS | 5 | Extra seconds after end+trail before running copy |
-| ARCHIVE_RETENTION_DAYS | 10 | Delete archive content older than this |
+| ARCHIVE_RETENTION_DAYS | 30 | Delete archive content older than this |
 | WORKER_INTERVAL | 10s | Copy and retention check interval |
 | LOG_LEVEL | info | Log level (e.g. debug) |
 

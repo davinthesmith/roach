@@ -200,10 +200,10 @@ services:
       - EVENT_END_TIMEOUT=1m
       - SOURCE_DIR=/data/streams/unifi/jpg
       - ARCHIVE_DIR=/data/streams/unifi/protect
-      - LEAD_SECONDS=60
-      - TRAIL_SECONDS=60
-      - COPY_DELAY_SECONDS=5
-      - ARCHIVE_RETENTION_DAYS=10
+      - LEAD_SECONDS=0
+      - TRAIL_SECONDS=0
+      - COPY_DELAY_SECONDS=1
+      - ARCHIVE_RETENTION_DAYS=30
       - LOG_LEVEL=info
     volumes:
       - ./data/streams/unifi/jpg:/data/streams/unifi/jpg:ro
