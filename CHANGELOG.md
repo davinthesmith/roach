@@ -2,6 +2,23 @@
 
 ## 2026-02-21
 
+### coreml-smart-crop (YOLO multi-type) and coreml-vehicle-detect
+
+#### Changed
+- **coreml-smart-crop**: Now watches `WATCH_ROOT` (default `./data/streams/unifi/protect/smart`) for all four event types (person, package, animal, vehicle). Replaced Vision person-only detector with **YOLO Core ML** object detection; allowlists per type (e.g. person, car/truck/bus/motorcycle, dog/cat/horse/…, backpack/handbag/suitcase). Crops to best-matching detection and writes to `data/streams/coreml/{person|package|animal|vehicle}/{timestamp}.jpg`. Config: `WATCH_ROOT`, `COREML_OUTPUT_DIR`, `YOLO_MODEL_PATH` (default `./models/yolo.mlpackage`), `DEBOUNCE_SECONDS`, `LOG_LEVEL`. Model setup: `./scripts/models/download-yolo.sh` or Ultralytics export (`yolo export model=yolo11n.pt format=coreml nms=True`). Docs and CLAUDE updated.
+
+#### Added
+- **coreml-vehicle-detect**: New native macOS Swift service. Watches `data/streams/coreml/vehicle`, runs CompCars-based Core ML make/model classifier (top-N), publishes one Kafka message per image to `detect.vehicle`. Key `vehicle:{image_timestamp}`; body JSON: `ts`, `image_path`, `top: [{ label, confidence }]`. Config: `WATCH_DIR`, `CAR_MODEL_PATH` (default `./models/CarRecognition.mlmodel`), `KAFKA_BROKER`, `KAFKA_TOPIC`, `DEBOUNCE_SECONDS`, `LOG_LEVEL`, `TOP_N`. Model: see `./scripts/models/download-car-model.sh` or Core-ML-Car-Recognition repo. Scripts: `scripts/coreml-vehicle-detect/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. Docs: `docs/coreml-vehicle-detect.md`, `docs/kafka-topics.md` (detect.vehicle), CLAUDE.md, scripts/README.md.
+- **scripts/models/download-yolo.sh**: Creates `./models`, optionally exports YOLO to Core ML via Ultralytics, or prints instructions.
+- **scripts/models/download-car-model.sh**: Prints instructions to obtain CarRecognition.mlmodel (Core-ML-Car-Recognition conversion).
+
+### coreml-smart-crop and coreml-face-crop (initial)
+
+#### Added
+- **coreml-smart-crop** (initial): Native macOS Swift service. Watches `data/streams/unifi/protect/smart/person`, detects person with Vision (`VNDetectHumanRectanglesRequest`), crops to first person bounding box, writes to `data/streams/coreml/person/{timestamp}.jpg`. Package/animal/vehicle out of scope (no built-in Vision support). Config: `WATCH_DIR`, `COREML_OUTPUT_DIR`, `DEBOUNCE_SECONDS`, `LOG_LEVEL`. Scripts: `scripts/coreml-smart-crop/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. Docs: `docs/coreml-smart-crop.md`, `services/coreml-smart-crop/README.md`.
+- **coreml-face-crop**: Native macOS Swift service. Watches `data/streams/coreml/person`, detects faces with Vision (`VNDetectFaceRectanglesRequest`), crops each face to `data/streams/coreml/faces/`. Naming: one face → `{base}.jpg`; multiple → `{base}_0.jpg`, `{base}_1.jpg`. Config: `WATCH_DIR`, `FACES_DIR`, `DEBOUNCE_SECONDS`, `LOG_LEVEL`. Scripts: `scripts/coreml-face-crop/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. Docs: `docs/coreml-face-crop.md`, `services/coreml-face-crop/README.md`.
+- **CLAUDE.md and scripts/README.md**: Updated to list coreml-smart-crop and coreml-face-crop services and commands.
+
 ### detect-person Service
 
 #### Added

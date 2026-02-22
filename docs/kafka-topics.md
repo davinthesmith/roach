@@ -61,6 +61,16 @@ Key: `{person_name}:{image_timestamp}`. Published when classification confidence
 
 **Body**: JSON with `person`, `confidence`, `alternatives` (array of `{person, confidence}`), `image_path`, `camera_name`, `event_start`, `image_timestamp`.
 
+## Vehicle Detection (coreml-vehicle-detect)
+
+Key: `vehicle:{image_timestamp}`. Published for each cropped vehicle image from coreml-smart-crop.
+
+| Topic | Description | Consumer |
+|-------|-------------|----------|
+| detect.vehicle | Car make/model classification (CompCars-based Core ML) | — |
+
+**Body**: JSON with `ts`, `image_path`, `top` (array of `{ label, confidence }`).
+
 ## Home Assistant Ecobee (homeassistant-kafka)
 
 Key: `{friendly_name}:{timestamp}` (entity_id minus domain and topic-redundant suffix).

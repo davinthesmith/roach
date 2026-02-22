@@ -1,6 +1,6 @@
 # ROACH — Real-time Observability Aggregation Conduit for the Home
 
-Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + two native macOS Swift services (detect-person, detect-person-stream).
+Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + five native macOS Swift services (detect-person, detect-person-stream, coreml-smart-crop, coreml-face-crop, coreml-vehicle-detect).
 
 ## Architecture
 
@@ -20,6 +20,9 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (30-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
 - `detect-person` — Native macOS Swift service (not Docker). CoreML/CreateML person classification on archived images. Two modes: `train` (labeled images → model) and `detect` (FSEvents watcher → classify → Kafka `detect.person`). Runs on host via `scripts/detect-person/`
 - `detect-person-stream` — Native macOS Swift service (not Docker). Connects to UniFi Protect RTSPS streams (like unifi-video-jpg), samples frames with AVFoundation, runs same person classifier as detect-person, publishes to `detect.person` (source: detect-person-stream). Runs on host via `scripts/detect-person-stream/`
+- `coreml-smart-crop` — Native macOS Swift service (not Docker). Watches `data/streams/unifi/protect/smart` (person/package/animal/vehicle), YOLO Core ML detection, crops to best bbox per type, writes to `data/streams/coreml/{person|package|animal|vehicle}/`. Runs on host via `scripts/coreml-smart-crop/`
+- `coreml-face-crop` — Native macOS Swift service (not Docker). Watches `data/streams/coreml/person`, detects faces with Vision (VNDetectFaceRectanglesRequest), crops each face to `data/streams/coreml/faces/`. Runs on host via `scripts/coreml-face-crop/`
+- `coreml-vehicle-detect` — Native macOS Swift service (not Docker). Watches `data/streams/coreml/vehicle`, runs CompCars-based Core ML make/model classifier, publishes to Kafka `detect.vehicle`. Runs on host via `scripts/coreml-vehicle-detect/`
 
 **Infrastructure** (from `docker-compose.infrastructure.yml`):
 - Zookeeper: 2181. Kafka: 9092 (external), 29092 (internal). PostgreSQL: 5432. Kafka UI: 8080.
@@ -32,7 +35,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 ```
 roach/
 ├── services/<name>/         # main.go, Dockerfile, README.md, config/, service/, ...
-├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/, detect-person-stream/
+├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/, detect-person-stream/, coreml-smart-crop/, coreml-face-crop/, coreml-vehicle-detect/
 ├── docs/                    # architecture, operations, troubleshooting, go-standards, kafka-topics, migrations
 ├── docker-compose.yml       # Application services
 ├── docker-compose.infrastructure.yml
@@ -78,6 +81,9 @@ POSTGRES_PASSWORD=...
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
 - detect-person: `KAFKA_BROKER=localhost:9092` (host, not Docker), `KAFKA_TOPIC=detect.person`, `WATCH_DIR`, `TRAIN_DIR`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `MAX_ALTERNATIVES=5`, `DEBOUNCE_SECONDS=1.0`
 - detect-person-stream: `UNIFI_HOST`, `UNIFI_API_KEY` (required), `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.person`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `FRAME_INTERVAL=1.0`, `RECONNECT_BACKOFF=1s,5s,30s`
+- coreml-smart-crop: `WATCH_ROOT=./data/streams/unifi/protect/smart`, `COREML_OUTPUT_DIR=./data/streams/coreml`, `YOLO_MODEL_PATH=./models/yolo.mlpackage`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
+- coreml-face-crop: `WATCH_DIR=./data/streams/coreml/person`, `FACES_DIR=./data/streams/coreml/faces`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
+- coreml-vehicle-detect: `WATCH_DIR=./data/streams/coreml/vehicle`, `CAR_MODEL_PATH=./models/CarRecognition.mlmodel`, `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.vehicle`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
 
@@ -113,6 +119,15 @@ BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.s
 ./scripts/detect-person/run/status.sh               # Diagnostics
 ./scripts/detect-person/run/logs.sh [lines]          # Tail log file
 ./scripts/detect-person/launchd/install-launchd.sh  # Auto-start at login
+
+# coreml-smart-crop / coreml-face-crop / coreml-vehicle-detect (native macOS, not Docker)
+./scripts/coreml-smart-crop/build/build.sh [release]
+./scripts/coreml-smart-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
+./scripts/coreml-face-crop/build/build.sh [release]
+./scripts/coreml-face-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
+./scripts/coreml-vehicle-detect/build/build.sh [release]
+./scripts/coreml-vehicle-detect/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
+Models: `./scripts/models/download-yolo.sh` (smart-crop), `./scripts/models/download-car-model.sh` (vehicle-detect).
 ```
 
 **Kafka**: List topics / consumer groups / consume: use `docker exec roach-kafka kafka-topics ...` and `kafka-console-consumer` / `kafka-consumer-groups` (see [docs/operations.md](docs/operations.md)).

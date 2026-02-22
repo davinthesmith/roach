@@ -20,6 +20,16 @@ go.work
 .build/
 .swiftpm/
 
+
+# Python files
+.venv-car
+.venv-models
+
+# Models
+*.pt
+*.mlpackage
+*.mlmodel
+
 # IDE
 .vscode/
 .idea/

@@ -9,6 +9,7 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
 - **Home Assistant (Ecobee)** streaming and thermostat command handling
 - **UniFi Protect** smart/audio/motion events, frame capture (jpg/video), and smart-event image archiving
 - **Person detection** (macOS): CoreML classifier on archived frames → Kafka `detect.person`
+- **CoreML pipeline** (macOS): smart crop by type (person/package/animal/vehicle), face crop, vehicle classification → Kafka `detect.vehicle`
 - **Two-stage backfill** (API→Kafka, Kafka→DB) for recovery and reconstruction
 
 ### Architecture
@@ -25,6 +26,9 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
   - `unifi-video-jpg`: UniFi Protect RTSP → ffmpeg → filesystem (1 frame/sec per camera)
   - `unifi-smart-archive`: Consumes `unifi.protect.smart`; archives event-window JPEGs to `data/streams/unifi/protect`
   - `detect-person`: Native macOS Swift service — CoreML person classification on archived images → Kafka `detect.person` (run via `scripts/detect-person/`)
+  - `coreml-smart-crop`: YOLO detection on smart archive, crops by type to `data/streams/coreml/{person|package|animal|vehicle}/` (run via `scripts/coreml-smart-crop/`)
+  - `coreml-face-crop`: Face detection on person crops → `data/streams/coreml/faces/` (run via `scripts/coreml-face-crop/`)
+  - `coreml-vehicle-detect`: Car make/model classifier on vehicle crops → Kafka `detect.vehicle` (run via `scripts/coreml-vehicle-detect/`)
 
 ### Project layout
 
@@ -106,14 +110,19 @@ Common commands:
 BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.sh
 ./scripts/weatherlink/sql-backfill.sh [--metadata] [--topics ...]
 
-# Person detection (macOS only)
+# Person & CoreML (macOS)
+./scripts/models/download-yolo.sh       # smart-crop model
+./scripts/models/download-car-model.sh  # vehicle-detect model (instructions)
 ./scripts/detect-person/build/build.sh [release]
 ./scripts/detect-person/train/train.sh
-./scripts/detect-person/run/detect.sh   # foreground
-./scripts/detect-person/run/start.sh    # daemon
-./scripts/detect-person/run/stop.sh
-./scripts/detect-person/run/status.sh
-./scripts/detect-person/launchd/install-launchd.sh   # Auto-start at login
+./scripts/detect-person/run/detect.sh | start.sh | stop.sh | status.sh
+./scripts/detect-person/launchd/install-launchd.sh
+./scripts/coreml-smart-crop/build/build.sh [release]
+./scripts/coreml-smart-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh
+./scripts/coreml-face-crop/build/build.sh [release]
+./scripts/coreml-face-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh
+./scripts/coreml-vehicle-detect/build/build.sh [release]
+./scripts/coreml-vehicle-detect/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh
 ```
 
 More detail:

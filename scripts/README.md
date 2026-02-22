@@ -620,6 +620,62 @@ Remove the LaunchAgent and stop auto-start.
 
 ---
 
+## CoreML services (coreml-smart-crop, coreml-face-crop, coreml-vehicle-detect)
+
+Native macOS Swift services. Run on the host (not Docker). All scripts run from project root.
+
+**Model installation**
+- **coreml-smart-crop**: run `./scripts/models/download-yolo.sh` (or follow its instructions) to obtain `./models/yolo.mlpackage`.
+- **coreml-vehicle-detect**: run `./scripts/models/download-car-model.sh` for instructions to obtain `./models/CarRecognition.mlmodel`.
+- **coreml-face-crop**: no external model.
+
+### coreml-smart-crop
+
+Watches `data/streams/unifi/protect/smart` (person/package/animal/vehicle), YOLO Core ML detection, crops to best bbox per type, writes to `data/streams/coreml/{person|package|animal|vehicle}/`. See [docs/coreml-smart-crop.md](../docs/coreml-smart-crop.md).
+
+| Script | Description |
+|--------|-------------|
+| `scripts/coreml-smart-crop/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-smart-crop/run/detect.sh` | Run in foreground |
+| `scripts/coreml-smart-crop/run/start.sh` | Start daemon |
+| `scripts/coreml-smart-crop/run/stop.sh` | Stop daemon |
+| `scripts/coreml-smart-crop/run/status.sh` | Diagnostics |
+| `scripts/coreml-smart-crop/run/logs.sh [lines]` | Tail log file |
+
+Logs: `data/logs/coreml-smart-crop.log`. PID: `data/logs/coreml-smart-crop.pid`.
+
+### coreml-face-crop
+
+Watches `data/streams/coreml/person`, detects faces with Vision, crops each face to `data/streams/coreml/faces/`. See [docs/coreml-face-crop.md](../docs/coreml-face-crop.md).
+
+| Script | Description |
+|--------|-------------|
+| `scripts/coreml-face-crop/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-face-crop/run/detect.sh` | Run in foreground |
+| `scripts/coreml-face-crop/run/start.sh` | Start daemon |
+| `scripts/coreml-face-crop/run/stop.sh` | Stop daemon |
+| `scripts/coreml-face-crop/run/status.sh` | Diagnostics |
+| `scripts/coreml-face-crop/run/logs.sh [lines]` | Tail log file |
+
+Logs: `data/logs/coreml-face-crop.log`. PID: `data/logs/coreml-face-crop.pid`.
+
+### coreml-vehicle-detect
+
+Watches `data/streams/coreml/vehicle`, runs CompCars-based Core ML make/model classifier, publishes to Kafka `detect.vehicle`. See [docs/coreml-vehicle-detect.md](../docs/coreml-vehicle-detect.md).
+
+| Script | Description |
+|--------|-------------|
+| `scripts/coreml-vehicle-detect/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-vehicle-detect/run/detect.sh` | Run in foreground |
+| `scripts/coreml-vehicle-detect/run/start.sh` | Start daemon |
+| `scripts/coreml-vehicle-detect/run/stop.sh` | Stop daemon |
+| `scripts/coreml-vehicle-detect/run/status.sh` | Diagnostics |
+| `scripts/coreml-vehicle-detect/run/logs.sh [lines]` | Tail log file |
+
+Logs: `data/logs/coreml-vehicle-detect.log`. PID: `data/logs/coreml-vehicle-detect.pid`.
+
+---
+
 ## Backfill Operations
 
 ### weatherlink/kafka-backfill.sh
