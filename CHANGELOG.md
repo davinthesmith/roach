@@ -2,6 +2,16 @@
 
 ## 2026-02-22
 
+### detect-person service removed
+
+#### Removed
+- **detect-person**: Native macOS Swift service and all references removed. Person classification from archived images (train + FSEvents detect) is no longer part of the project. Use **detect-person-stream** for person detection (samples UniFi Protect RTSP directly). Deleted: `services/detect-person/`, `scripts/detect-person/`. Docs (CLAUDE.md, README.md, scripts/README.md, docs/kafka-topics.md) and CHANGELOG historical mentions unchanged except this entry.
+
+### unifi-smart-archive real-time streaming
+
+#### Changed
+- **unifi-smart-archive**: Images now stream to `data/streams/unifi/protect/smart` as soon as a smart detection starts, instead of only after the event ends. On first Kafka message (with or without `end`), the service creates the archive directory and copies frames in real time: initial catch-up of existing frames in the window, then fsnotify on the source dir to copy each new frame as it appears. Stream session closes when event `end` is received and the full window [start−lead, end+trail] is copied (after COPY_DELAY_SECONDS). Events that time out without `end` have their partial archive removed. Overlapping/adjacent events still coalesce into one archive directory per (camera, detection_type).
+
 ### Model paths and data directory
 
 #### Changed

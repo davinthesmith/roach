@@ -13,20 +13,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/segmentio/kafka-go"
 
 	"unifi-smart-archive/models"
 )
 
-// PendingJob is a copy job scheduled for after copyAfterUnix.
-// One job per (camera, detection_type); overlapping/adjacent events are merged (EventIDs holds all).
-type PendingJob struct {
+// StreamSession is an active stream: one per (camera, detection_type); created on first message (with or without end).
+// Frames are copied to the archive as they appear in the source dir until the session is complete.
+type StreamSession struct {
 	CameraName    string
 	DetectionType string
 	StartMs       int64
 	EndMs         int64
 	CopyAfterUnix int64
-	EventIDs      []string // all event IDs merged into this job; marked done when copy runs
+	ArchiveBase   string
+	EventIDs      []string
+	copied        map[int64]struct{}
 }
 
 // WaitingEvent is an event we've seen (start only) and are waiting for a final message with end.
@@ -38,34 +41,46 @@ type WaitingEvent struct {
 	LastMessageAt time.Time
 }
 
-// Service consumes smart events and copies JPEG windows to the archive.
+// Service consumes smart events and streams JPEG frames to the archive in real time.
 type Service struct {
 	cfg           models.Config
 	reader        *kafka.Reader
-	pending       map[string]*PendingJob  // cameraKey(camera, type) -> copy job (merged window)
-	waitingForEnd map[string]*WaitingEvent // event ID -> waiting for final message with end
-	done          map[string]struct{}     // event IDs already copied (avoid double copy on redelivery)
+	watcher       *fsnotify.Watcher
+	streams       map[string]*StreamSession // cameraKey(camera, type) -> active stream
+	watchedDirs   map[string]int           // camera source dir -> ref count
+	waitingForEnd map[string]*WaitingEvent
+	done          map[string]struct{}
 	mu            sync.Mutex
 	workerWg      sync.WaitGroup
 }
 
 // New creates a new archive service.
 func New(cfg models.Config, reader *kafka.Reader) *Service {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("fsnotify NewWatcher: %v — streaming will use catch-up only", err)
+		w = nil
+	}
 	return &Service{
 		cfg:           cfg,
 		reader:        reader,
-		pending:       make(map[string]*PendingJob),
+		watcher:       w,
+		streams:       make(map[string]*StreamSession),
+		watchedDirs:   make(map[string]int),
 		waitingForEnd: make(map[string]*WaitingEvent),
 		done:          make(map[string]struct{}),
 	}
 }
 
-// Start runs the consumer loop and starts the copy/retention worker.
+// Start runs the consumer loop, the fsnotify handler, and the copy/retention worker.
 // Exits on context cancel or Kafka consumer/commit error.
 func (s *Service) Start(ctx context.Context) error {
-	// Start copy + retention worker
 	s.workerWg.Add(1)
 	go s.runWorker(ctx)
+	if s.watcher != nil {
+		s.workerWg.Add(1)
+		go s.runWatcher(ctx)
+	}
 
 	log.Printf("Consuming smart events from %q (group: %s); event end timeout: %v (stop archiving if no follow-up)",
 		s.cfg.KafkaTopic, s.cfg.KafkaConsumerGroup, s.cfg.EventEndTimeout)
@@ -132,52 +147,190 @@ func (s *Service) processMessage(ctx context.Context, msg kafka.Message) {
 	}
 
 	if event.HasEnd() {
-		// Final message: create or merge into the one pending job per (camera, type)
 		delete(s.waitingForEnd, event.ID)
-		copyAfterUnix := event.End/1000 + int64(s.cfg.TrailSeconds) + int64(s.cfg.CopyDelaySeconds)
-		key := cameraKey(cameraName, detectionType)
-		if existing, ok := s.pending[key]; ok {
-			// Merge: extend window, push copyAfter to latest end, add event ID
-			if event.Start < existing.StartMs {
-				existing.StartMs = event.Start
+	}
+
+	key := cameraKey(cameraName, detectionType)
+	copyAfterUnix := int64(0)
+	if event.HasEnd() {
+		copyAfterUnix = event.End/1000 + int64(s.cfg.TrailSeconds) + int64(s.cfg.CopyDelaySeconds)
+	}
+
+	existing, ok := s.streams[key]
+	if ok {
+		// Merge: extend window, update copyAfter when we get end, add event ID
+		if event.Start < existing.StartMs {
+			// Earlier start: switch archive to new path and migrate
+			oldBase := existing.ArchiveBase
+			existing.StartMs = event.Start
+			existing.ArchiveBase = s.archiveBase(cameraName, detectionType, existing.StartMs)
+			if oldBase != existing.ArchiveBase {
+				_ = os.MkdirAll(existing.ArchiveBase, 0755)
+				s.catchUpLocked(existing)
+				_ = os.RemoveAll(oldBase)
 			}
+		}
+		if event.HasEnd() {
 			if event.End > existing.EndMs {
 				existing.EndMs = event.End
 			}
 			if copyAfterUnix > existing.CopyAfterUnix {
 				existing.CopyAfterUnix = copyAfterUnix
 			}
-			existing.EventIDs = append(existing.EventIDs, event.ID)
-			if s.cfg.LogLevel == "debug" {
-				log.Printf("DEBUG: merged event %s into job %s (camera=%s type=%s)",
-					event.ID, key, cameraName, detectionType)
-			}
-		} else {
-			s.pending[key] = &PendingJob{
-				CameraName:    cameraName,
-				DetectionType: detectionType,
-				StartMs:       event.Start,
-				EndMs:         event.End,
-				CopyAfterUnix: copyAfterUnix,
-				EventIDs:      []string{event.ID},
-			}
-			if s.cfg.LogLevel == "debug" {
-				log.Printf("DEBUG: scheduled copy for event %s at %d (camera=%s type=%s)",
-					event.ID, copyAfterUnix, cameraName, detectionType)
-			}
+			s.catchUpLocked(existing)
+		}
+		existing.EventIDs = append(existing.EventIDs, event.ID)
+		if s.cfg.LogLevel == "debug" {
+			log.Printf("DEBUG: merged event %s into stream %s (camera=%s type=%s)", event.ID, key, cameraName, detectionType)
 		}
 		return
 	}
 
-	// No end yet: we're waiting for the final message. Record that we got a message for this event.
-	s.waitingForEnd[event.ID] = &WaitingEvent{
+	// New stream: create session and start streaming
+	archiveBase := s.archiveBase(cameraName, detectionType, event.Start)
+	if err := os.MkdirAll(archiveBase, 0755); err != nil {
+		log.Printf("Failed to create archive dir %s: %v", archiveBase, err)
+		return
+	}
+	session := &StreamSession{
 		CameraName:    cameraName,
 		DetectionType: detectionType,
 		StartMs:       event.Start,
-		LastMessageAt: now,
+		EndMs:         event.End,
+		CopyAfterUnix: copyAfterUnix,
+		ArchiveBase:   archiveBase,
+		EventIDs:      []string{event.ID},
+		copied:        make(map[int64]struct{}),
+	}
+	s.streams[key] = session
+	s.ensureWatchedLocked(cameraName)
+	s.catchUpLocked(session)
+
+	if !event.HasEnd() {
+		s.waitingForEnd[event.ID] = &WaitingEvent{
+			CameraName:    cameraName,
+			DetectionType: detectionType,
+			StartMs:       event.Start,
+			LastMessageAt: now,
+		}
 	}
 	if s.cfg.LogLevel == "debug" {
-		log.Printf("DEBUG: event %s has no end yet, waiting for final message", event.ID)
+		log.Printf("DEBUG: started stream %s for event %s (camera=%s type=%s)", key, event.ID, cameraName, detectionType)
+	}
+}
+
+func (s *Service) archiveBase(cameraName, detectionType string, startMs int64) string {
+	startSec := startMs / 1000
+	return filepath.Join(s.cfg.ArchiveDir, "smart", detectionType, cameraName, strconv.FormatInt(startSec, 10))
+}
+
+// ensureWatchedLocked adds the camera's source dir to the watcher if not already. Call with s.mu held.
+func (s *Service) ensureWatchedLocked(cameraName string) {
+	if s.watcher == nil {
+		return
+	}
+	dir := filepath.Join(s.cfg.SourceDir, cameraName)
+	s.watchedDirs[dir]++
+	if s.watchedDirs[dir] > 1 {
+		return
+	}
+	if err := s.watcher.Add(dir); err != nil {
+		log.Printf("watcher Add %s: %v", dir, err)
+		s.watchedDirs[dir]--
+	}
+}
+
+// catchUpLocked copies any existing frames in the session's window from source to archive. Call with s.mu held.
+func (s *Service) catchUpLocked(session *StreamSession) {
+	fromSec := session.StartMs/1000 - int64(s.cfg.LeadSeconds)
+	toSec := int64(0)
+	if session.EndMs > 0 {
+		toSec = session.EndMs/1000 + int64(s.cfg.TrailSeconds)
+	} else {
+		toSec = time.Now().Unix() + 5
+	}
+	sourceDir := filepath.Join(s.cfg.SourceDir, session.CameraName)
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jpg") {
+			continue
+		}
+		tsStr := strings.TrimSuffix(e.Name(), ".jpg")
+		ts, err := strconv.ParseInt(tsStr, 10, 64)
+		if err != nil || ts < fromSec || ts > toSec {
+			continue
+		}
+		if _, ok := session.copied[ts]; ok {
+			continue
+		}
+		srcPath := filepath.Join(sourceDir, e.Name())
+		dstPath := filepath.Join(session.ArchiveBase, e.Name())
+		if err := copyFile(srcPath, dstPath); err != nil {
+			continue
+		}
+		session.copied[ts] = struct{}{}
+	}
+}
+
+// runWatcher handles fsnotify events and copies new files into active streams. Call without s.mu.
+func (s *Service) runWatcher(ctx context.Context) {
+	defer s.workerWg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case err, ok := <-s.watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("fsnotify error: %v", err)
+		case ev, ok := <-s.watcher.Events:
+			if !ok {
+				return
+			}
+			if ev.Op != fsnotify.Create {
+				continue
+			}
+			if !strings.HasSuffix(ev.Name, ".jpg") {
+				continue
+			}
+			dir, name := filepath.Split(strings.TrimSuffix(ev.Name, ".jpg") + ".jpg")
+			dir = filepath.Clean(dir)
+			tsStr := strings.TrimSuffix(name, ".jpg")
+			ts, err := strconv.ParseInt(tsStr, 10, 64)
+			if err != nil {
+				continue
+			}
+			cameraName := sanitizeName(filepath.Base(dir))
+			s.mu.Lock()
+			for _, session := range s.streams {
+				if session.CameraName != cameraName {
+					continue
+				}
+				fromSec := session.StartMs/1000 - int64(s.cfg.LeadSeconds)
+				toSec := int64(0)
+				if session.EndMs > 0 {
+					toSec = session.EndMs/1000 + int64(s.cfg.TrailSeconds)
+				} else {
+					toSec = time.Now().Unix() + 60
+				}
+				if ts < fromSec || ts > toSec {
+					continue
+				}
+				if _, ok := session.copied[ts]; ok {
+					continue
+				}
+				dstPath := filepath.Join(session.ArchiveBase, name)
+				if err := copyFile(ev.Name, dstPath); err != nil {
+					continue
+				}
+				session.copied[ts] = struct{}{}
+			}
+			s.mu.Unlock()
+		}
 	}
 }
 
@@ -202,7 +355,7 @@ func cameraKey(cameraName, detectionType string) string {
 	return cameraName + "|" + detectionType
 }
 
-// runWorker runs the copy and retention passes on a ticker.
+// runWorker runs expire, close completed streams, and retention on a ticker.
 func (s *Service) runWorker(ctx context.Context) {
 	defer s.workerWg.Done()
 	ticker := time.NewTicker(s.cfg.WorkerInterval)
@@ -211,7 +364,7 @@ func (s *Service) runWorker(ctx context.Context) {
 	lastRetention := time.Now()
 	retentionInterval := time.Hour
 	if s.cfg.ArchiveRetentionDays > 0 {
-		retentionInterval = time.Duration(s.cfg.ArchiveRetentionDays) * 24 * time.Hour / 24 // at least once per day
+		retentionInterval = time.Duration(s.cfg.ArchiveRetentionDays) * 24 * time.Hour / 24
 		if retentionInterval > time.Hour {
 			retentionInterval = time.Hour
 		}
@@ -223,7 +376,7 @@ func (s *Service) runWorker(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.expireWaitingForEnd()
-			s.runCopyPass()
+			s.closeCompletedStreams()
 			if time.Since(lastRetention) >= retentionInterval {
 				s.runRetentionPass()
 				lastRetention = time.Now()
@@ -232,7 +385,8 @@ func (s *Service) runWorker(ctx context.Context) {
 	}
 }
 
-// expireWaitingForEnd removes events that have had no message within EventEndTimeout (stop archiving those).
+// expireWaitingForEnd removes events that had no message within EventEndTimeout. For any such event that
+// is the only one in its stream and the stream has no end, removes the stream and deletes the partial archive.
 func (s *Service) expireWaitingForEnd() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -240,63 +394,76 @@ func (s *Service) expireWaitingForEnd() {
 	for id, ev := range s.waitingForEnd {
 		if ev.LastMessageAt.Before(cutoff) {
 			delete(s.waitingForEnd, id)
-			if s.cfg.LogLevel == "debug" {
+			key := cameraKey(ev.CameraName, ev.DetectionType)
+			session, hasStream := s.streams[key]
+			if hasStream && session.EndMs == 0 && len(session.EventIDs) == 1 && session.EventIDs[0] == id {
+				delete(s.streams, key)
+				s.releaseWatchedLocked(ev.CameraName)
+				_ = os.RemoveAll(session.ArchiveBase)
+				if s.cfg.LogLevel == "debug" {
+					log.Printf("DEBUG: no follow-up for event %s within %v — removed stream and partial archive", id, s.cfg.EventEndTimeout)
+				}
+			} else if s.cfg.LogLevel == "debug" && !hasStream {
 				log.Printf("DEBUG: no follow-up for event %s within %v — stopped waiting for end (will not archive)", id, s.cfg.EventEndTimeout)
 			}
 		}
 	}
 }
 
-func (s *Service) runCopyPass() {
-	s.mu.Lock()
-	now := time.Now().Unix()
-	var toRun []*PendingJob
-	var keys []string
-	for key, job := range s.pending {
-		if now >= job.CopyAfterUnix {
-			toRun = append(toRun, job)
-			keys = append(keys, key)
-		}
+func (s *Service) releaseWatchedLocked(cameraName string) {
+	if s.watcher == nil {
+		return
 	}
-	for _, key := range keys {
-		delete(s.pending, key)
-	}
-	s.mu.Unlock()
-
-	for _, job := range toRun {
-		s.copyWindow(job)
-		s.mu.Lock()
-		for _, id := range job.EventIDs {
-			s.done[id] = struct{}{}
-		}
-		s.mu.Unlock()
+	dir := filepath.Join(s.cfg.SourceDir, cameraName)
+	s.watchedDirs[dir]--
+	if s.watchedDirs[dir] <= 0 {
+		delete(s.watchedDirs, dir)
+		_ = s.watcher.Remove(dir)
 	}
 }
 
-func (s *Service) copyWindow(job *PendingJob) {
-	startSec := job.StartMs / 1000
-	endSec := job.EndMs / 1000
-	fromSec := startSec - int64(s.cfg.LeadSeconds)
-	toSec := endSec + int64(s.cfg.TrailSeconds)
-
-	sourceDir := filepath.Join(s.cfg.SourceDir, job.CameraName)
-	archiveBase := filepath.Join(s.cfg.ArchiveDir, "smart", job.DetectionType, job.CameraName, strconv.FormatInt(startSec, 10))
-	_ = os.MkdirAll(archiveBase, 0755)
-
-	copied := 0
-	for ts := fromSec; ts <= toSec; ts++ {
-		srcPath := filepath.Join(sourceDir, fmt.Sprintf("%d.jpg", ts))
-		dstPath := filepath.Join(archiveBase, fmt.Sprintf("%d.jpg", ts))
-		if err := copyFile(srcPath, dstPath); err != nil {
-			continue // skip missing or unreadable
+// closeCompletedStreams removes streams that have end and have copied through toSec and time >= CopyAfterUnix.
+func (s *Service) closeCompletedStreams() {
+	s.mu.Lock()
+	now := time.Now().Unix()
+	var toClose []string
+	for key, session := range s.streams {
+		if session.EndMs == 0 {
+			continue
 		}
-		copied++
+		toSec := session.EndMs/1000 + int64(s.cfg.TrailSeconds)
+		if now < session.CopyAfterUnix {
+			continue
+		}
+		if _, ok := session.copied[toSec]; ok {
+			toClose = append(toClose, key)
+			continue
+		}
+		s.catchUpLocked(session)
+		if _, ok := session.copied[toSec]; ok {
+			toClose = append(toClose, key)
+			continue
+		}
+		// After copy delay, last frame may still be missing (gap or writer lag). Close anyway.
+		srcPath := filepath.Join(s.cfg.SourceDir, session.CameraName, fmt.Sprintf("%d.jpg", toSec))
+		if _, err := os.Stat(srcPath); err != nil {
+			toClose = append(toClose, key)
+		}
 	}
-	eventDesc := strconv.FormatInt(startSec, 10)
-	if len(job.EventIDs) > 1 {
-		eventDesc = eventDesc + " (" + strconv.Itoa(len(job.EventIDs)) + " events)"
+	for _, key := range toClose {
+		session := s.streams[key]
+		delete(s.streams, key)
+		s.releaseWatchedLocked(session.CameraName)
+		for _, id := range session.EventIDs {
+			s.done[id] = struct{}{}
+		}
+		eventDesc := strconv.FormatInt(session.StartMs/1000, 10)
+		if len(session.EventIDs) > 1 {
+			eventDesc = eventDesc + " (" + strconv.Itoa(len(session.EventIDs)) + " events)"
+		}
+		log.Printf("Archived %s/%s %s: %d frames -> %s", session.DetectionType, session.CameraName, eventDesc, len(session.copied), session.ArchiveBase)
 	}
-	log.Printf("Archived %s/%s %s: %d frames -> %s", job.DetectionType, job.CameraName, eventDesc, copied, archiveBase)
+	s.mu.Unlock()
 }
 
 func copyFile(src, dst string) error {
@@ -380,9 +547,12 @@ func (s *Service) removeOldEventDirsIn(cameraDir string, cutoff time.Time, count
 	}
 }
 
-// Close releases the Kafka reader and waits for the worker.
+// Close releases the watcher and Kafka reader and waits for workers.
 func (s *Service) Close() error {
 	s.workerWg.Wait()
+	if s.watcher != nil {
+		_ = s.watcher.Close()
+	}
 	if s.reader != nil {
 		return s.reader.Close()
 	}

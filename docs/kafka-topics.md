@@ -49,7 +49,7 @@ Key: `{camera_id}:{timestamp}`. Value: raw JPEG frame bytes (binary, ~1 frame/se
 | source | unifi-protect-video |
 | content_type | image/jpeg |
 
-## Person Detection (detect-person)
+## Person Detection (detect-person-stream)
 
 Key: `{person_name}:{image_timestamp}`. Published when classification confidence exceeds threshold.
 

@@ -8,13 +8,13 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
 - **WeatherLink integration** for outdoor/indoor weather data and rich metadata
 - **Home Assistant (Ecobee)** streaming and thermostat command handling
 - **UniFi Protect** smart/audio/motion events, frame capture (jpg/video), and smart-event image archiving
-- **Person detection** (macOS): CoreML classifier on archived frames → Kafka `detect.person`
+- **Person detection** (macOS): detect-person-stream samples UniFi Protect RTSP frames, CoreML classifier → Kafka `detect.person`
 - **CoreML pipeline** (macOS): smart crop by type (person/package/animal/vehicle), face crop, vehicle classification → Kafka `detect.vehicle`
 - **Two-stage backfill** (API→Kafka, Kafka→DB) for recovery and reconstruction
 
 ### Architecture
 
-- **Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (detect-person)
+- **Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (Swift services)
 - **Data flow**: IoT → service → Kafka → PostgreSQL view (`records`) → SQL
 - **Services**:
   - `weatherlink-kafka`: WeatherLink API → Kafka (real-time + optional backfill)
@@ -25,7 +25,7 @@ Kafka-based observability pipeline for home IoT. Collects from WeatherLink, Home
   - `unifi-kafka`: UniFi Protect WebSocket → Kafka (smart/audio/motion)
   - `unifi-video-jpg`: UniFi Protect RTSP → ffmpeg → filesystem (1 frame/sec per camera)
   - `unifi-smart-archive`: Consumes `unifi.protect.smart`; archives event-window JPEGs to `data/streams/unifi/protect`
-  - `detect-person`: Native macOS Swift service — CoreML person classification on archived images → Kafka `detect.person` (run via `scripts/detect-person/`)
+  - `detect-person-stream`: Native macOS Swift — samples UniFi Protect RTSP, CoreML person classification → Kafka `detect.person` (run via `scripts/detect-person-stream/`)
   - `coreml-smart-crop`: YOLO detection on smart archive, crops by type to `data/streams/coreml/{person|package|animal|vehicle}/` (run via `scripts/coreml-smart-crop/`)
   - `coreml-face-crop`: Face detection on person crops → `data/streams/coreml/faces/` (run via `scripts/coreml-face-crop/`)
   - `coreml-vehicle-detect`: Car make/model classifier on vehicle crops → Kafka `detect.vehicle` (run via `scripts/coreml-vehicle-detect/`)
@@ -37,9 +37,9 @@ roach/
 ├── docker-compose.infrastructure.yml   # Kafka, Zookeeper, Postgres, Kafka UI
 ├── docker-compose.yml                  # Application services
 ├── CLAUDE.md                           # Single-file context for AI/maintainers
-├── scripts/                            # Ops scripts (start, status, logs, db, backfill, detect-person)
+├── scripts/                            # Ops scripts (start, status, logs, db, backfill, detect-person-stream)
 ├── docs/                               # Architecture, operations, topics, standards
-├── services/                           # Go services + detect-person (Swift); each with its own README
+├── services/                           # Go services + Swift services; each with its own README
 └── data/                               # Kafka / Zookeeper / Postgres / streams / train / models
 ```
 
@@ -113,10 +113,8 @@ BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.s
 # Person & CoreML (macOS)
 ./scripts/models/download-yolo.sh       # smart-crop model → data/models/yolo.mlpackage
 ./scripts/models/download-car-model.sh  # vehicle-detect model → data/models/CarRecognition.mlmodel
-./scripts/detect-person/build/build.sh [release]
-./scripts/detect-person/train/train.sh
-./scripts/detect-person/run/detect.sh | start.sh | stop.sh | status.sh
-./scripts/detect-person/launchd/install-launchd.sh
+./scripts/detect-person-stream/build/build.sh [release]
+./scripts/detect-person-stream/run/detect.sh | start.sh | stop.sh | status.sh
 ./scripts/coreml-smart-crop/build/build.sh [release]
 ./scripts/coreml-smart-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh
 ./scripts/coreml-face-crop/build/build.sh [release]

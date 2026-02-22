@@ -1,10 +1,10 @@
 # ROACH — Real-time Observability Aggregation Conduit for the Home
 
-Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + five native macOS Swift services (detect-person, detect-person-stream, coreml-smart-crop, coreml-face-crop, coreml-vehicle-detect).
+Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, Home Assistant (Ecobee), UniFi Protect. PostgreSQL materialization with Device/Tag/Record hierarchy. Eight Go services (6 daemons, 2 backfill/tools) + four native macOS Swift services (detect-person-stream, coreml-smart-crop, coreml-face-crop, coreml-vehicle-detect).
 
 ## Architecture
 
-**Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (detect-person)
+**Stack**: Docker Compose, Kafka 7.5, PostgreSQL 16, Zookeeper, Go 1.21+, Swift 5.9+ (Swift services)
 
 **Data flow**: IoT → Service → Kafka (infinite) → PostgreSQL. Two-stage backfill: (1) API→Kafka via weatherlink-kafka backfill mode; (2) Kafka→DB via weatherlink-sql-backfill.
 
@@ -17,9 +17,8 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 - `unifi-kafka` — UniFi Protect WebSocket → Kafka (smart/audio/motion)
 - `unifi-video-kafka` — UniFi Protect RTSPS → ffmpeg → Kafka (1 frame/sec per camera, 30-min retention). Commented out in docker-compose; only one video stream at a time.
 - `unifi-video-jpg` — UniFi Protect RTSPS → ffmpeg → filesystem (1 frame/sec per camera to `./data/streams/unifi/jpg`, configurable RETENTION)
-- `unifi-smart-archive` — Consumes `unifi.protect.smart`; copies event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` (30-day retention); stops waiting for event end if no follow-up within EVENT_END_TIMEOUT; exits on Kafka consumer/commit errors
-- `detect-person` — Native macOS Swift service (not Docker). CoreML/CreateML person classification on archived images. Two modes: `train` (labeled images → model) and `detect` (FSEvents watcher → classify → Kafka `detect.person`). Runs on host via `scripts/detect-person/`
-- `detect-person-stream` — Native macOS Swift service (not Docker). Connects to UniFi Protect RTSPS streams (like unifi-video-jpg), samples frames with AVFoundation, runs same person classifier as detect-person, publishes to `detect.person` (source: detect-person-stream). Runs on host via `scripts/detect-person-stream/`
+- `unifi-smart-archive` — Consumes `unifi.protect.smart`; streams event time-window JPEGs from unifi-video-jpg output to `./data/streams/unifi/protect` in real time (archive dir created on detection start, frames copied as they appear via fsnotify); 30-day retention; stops waiting for event end if no follow-up within EVENT_END_TIMEOUT (removes partial archive); exits on Kafka consumer/commit errors
+- `detect-person-stream` — Native macOS Swift service (not Docker). Connects to UniFi Protect RTSPS streams (like unifi-video-jpg), samples frames with AVFoundation, runs person classifier, publishes to `detect.person`. Runs on host via `scripts/detect-person-stream/`
 - `coreml-smart-crop` — Native macOS Swift service (not Docker). Watches `data/streams/unifi/protect/smart` (person/package/animal/vehicle), YOLO Core ML detection, crops to best bbox per type, writes to `data/streams/coreml/{person|package|animal|vehicle}/`. Runs on host via `scripts/coreml-smart-crop/`
 - `coreml-face-crop` — Native macOS Swift service (not Docker). Watches `data/streams/coreml/person`, detects faces with Vision (VNDetectFaceRectanglesRequest), crops each face to `data/streams/coreml/faces/`. Runs on host via `scripts/coreml-face-crop/`
 - `coreml-vehicle-detect` — Native macOS Swift service (not Docker). Watches `data/streams/coreml/vehicle`, runs CompCars-based Core ML make/model classifier, publishes to Kafka `detect.vehicle`. Runs on host via `scripts/coreml-vehicle-detect/`
@@ -35,7 +34,7 @@ Kafka-based data aggregation for home IoT with infinite retention. WeatherLink, 
 ```
 roach/
 ├── services/<name>/         # main.go, Dockerfile, README.md, config/, service/, ...
-├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person/, detect-person-stream/, coreml-smart-crop/, coreml-face-crop/, coreml-vehicle-detect/
+├── scripts/                 # start-all.sh, logs.sh, db/, weatherlink/, homeassistant/, detect-person-stream/, coreml-smart-crop/, coreml-face-crop/, coreml-vehicle-detect/
 ├── docs/                    # architecture, operations, troubleshooting, go-standards, kafka-topics, migrations
 ├── docker-compose.yml       # Application services
 ├── docker-compose.infrastructure.yml
@@ -46,8 +45,8 @@ roach/
 **Data** (`./data/`): All ephemeral, downloaded, and personal information lives under `./data/`. Not committed (gitignored). Includes:
 - **Infrastructure**: `data/kafka`, `data/zookeeper`, `data/postgres` (Docker volumes).
 - **Streams**: `data/streams/` — UniFi video/jpg, protect/smart archives, coreml crops (person, vehicle, faces, etc.).
-- **Models**: `data/models/` — ML models consumed by services. Download scripts and trained outputs go here. Examples: `data/models/CarRecognition.mlmodel` (+ `.mlmodelc`), `data/models/yolo.mlpackage` (coreml-smart-crop), `data/models/detect-person/` (trained person classifier). For new models, use `data/models/<service-or-name>/` or a single file under `data/models/` as appropriate; document in the service README and in this file.
-- **Logs**: `data/logs/` — e.g. coreml-vehicle-detect, detect-person daemon logs.
+- **Models**: `data/models/` — ML models consumed by services. Download scripts and trained outputs go here. Examples: `data/models/CarRecognition.mlmodel` (+ `.mlmodelc`), `data/models/yolo.mlpackage` (coreml-smart-crop). For new models, use `data/models/<service-or-name>/` or a single file under `data/models/` as appropriate; document in the service README and in this file.
+- **Logs**: `data/logs/` — e.g. coreml-vehicle-detect, detect-person-stream daemon logs.
 
 Per-service detail: each has a README in `services/<name>/README.md` (e.g. [weatherlink-kafka](services/weatherlink-kafka/README.md)).
 
@@ -85,7 +84,6 @@ POSTGRES_PASSWORD=...
 - unifi-video-jpg: `JPG_OUTPUT_DIR`, `RETENTION=30m`, `RECONNECT_BACKOFF=1s,5s,30s`
 - unifi-smart-archive: `SOURCE_DIR`, `ARCHIVE_DIR`, `EVENT_END_TIMEOUT=1m` (stop waiting for event end), `ARCHIVE_RETENTION_DAYS=10`, `LEAD_SECONDS`, `TRAIL_SECONDS`
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
-- detect-person: `KAFKA_BROKER=localhost:9092` (host, not Docker), `KAFKA_TOPIC=detect.person`, `WATCH_DIR`, `TRAIN_DIR`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `MAX_ALTERNATIVES=5`, `DEBOUNCE_SECONDS=1.0`
 - detect-person-stream: `UNIFI_HOST`, `UNIFI_API_KEY` (required), `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.person`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `FRAME_INTERVAL=1.0`, `RECONNECT_BACKOFF=1s,5s,30s`
 - coreml-smart-crop: `WATCH_ROOT=./data/streams/unifi/protect/smart`, `COREML_OUTPUT_DIR=./data/streams/coreml`, `YOLO_MODEL_PATH=./data/models/yolo.mlpackage`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
 - coreml-face-crop: `WATCH_DIR=./data/streams/coreml/person`, `FACES_DIR=./data/streams/coreml/faces`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
@@ -116,16 +114,6 @@ docker stats
 BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.sh
 ./scripts/weatherlink/sql-backfill.sh [--topics ...] [--metadata]
 
-# detect-person (native macOS, not Docker)
-./scripts/detect-person/build/build.sh [release]     # Build Swift package
-./scripts/detect-person/train/train.sh              # Train model from data/train/
-./scripts/detect-person/run/detect.sh               # Run detection (foreground)
-./scripts/detect-person/run/start.sh                # Start detection daemon
-./scripts/detect-person/run/stop.sh                 # Stop daemon
-./scripts/detect-person/run/status.sh               # Diagnostics
-./scripts/detect-person/run/logs.sh [lines]          # Tail log file
-./scripts/detect-person/launchd/install-launchd.sh  # Auto-start at login
-
 # coreml-smart-crop / coreml-face-crop / coreml-vehicle-detect (native macOS, not Docker)
 ./scripts/coreml-smart-crop/build/build.sh [release]
 ./scripts/coreml-smart-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
@@ -150,7 +138,7 @@ Full script reference: [scripts/README.md](scripts/README.md).
 
 **UniFi Protect**: `unifi.protect.smart` (person, vehicle, animal, package); consumed by unifi-smart-archive for image archiving. `unifi.protect.audio` (babyCry, coAlarm, smoke, speak), `unifi.protect.motion`. Key `camera_name:timestamp`. **Video**: `unifi.protect.video.{camera_name}` (1 JPEG frame/sec, 30-min retention). Key `camera_id:timestamp`.
 
-**Person Detection** (detect-person): `detect.person`. Key `person_name:image_timestamp`. Headers: `schema_version`, `camera_name`, `event_start`, `timestamp`, `source`. Body: JSON with `person`, `confidence`, `alternatives`, `image_path`, `camera_name`, `event_start`, `image_timestamp`.
+**Person Detection** (detect-person-stream): `detect.person`. Key `person_name:image_timestamp`. Headers: `schema_version`, `camera_name`, `event_start`, `timestamp`, `source`. Body: JSON with `person`, `confidence`, `alternatives`, `image_path`, `camera_name`, `event_start`, `image_timestamp`.
 
 Full schemas: [docs/kafka-topics.md](docs/kafka-topics.md). Storage/optimization: [docs/kafka-standards.md](docs/kafka-standards.md).
 
