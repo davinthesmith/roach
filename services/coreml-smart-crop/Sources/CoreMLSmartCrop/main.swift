@@ -47,20 +47,28 @@ struct Main {
             watchPath: config.watchRoot,
             debounceInterval: config.debounceInterval
         ) { url in
+            logDebug("[main] processing \(url.lastPathComponent)...")
+            fflush(stdout)
             guard let eventType = eventType(from: url) else {
-                logDebug("Skipping \(url.path) (unknown event type)")
+                logDebug("[main] skipping \(url.path) (unknown event type)")
+                fflush(stdout)
                 return
             }
             let outputDir = config.outputDir(for: eventType.rawValue)
+            logDebug("[main] eventType=\(eventType.rawValue) outputDir=\(outputDir)")
+            fflush(stdout)
             do {
                 let written = try SmartCrop.process(imageAt: url, eventType: eventType, outputDir: outputDir)
                 if written {
                     log("Cropped \(url.lastPathComponent) -> \(outputDir)/\(url.deletingPathExtension().lastPathComponent).jpg")
                 } else {
-                    logDebug("No allowed detection in \(url.lastPathComponent) for \(eventType.rawValue)")
+                    logDebug("[main] no allowed detection in \(url.lastPathComponent) for \(eventType.rawValue)")
+                    fflush(stdout)
                 }
             } catch {
                 log("Error processing \(url.lastPathComponent): \(error)")
+                logDebug("[main] process failed for \(url.lastPathComponent)")
+                fflush(stdout)
             }
         }
 

@@ -496,10 +496,10 @@ Watches `data/streams/unifi/protect/smart` (person/package/animal/vehicle), YOLO
 
 | Script | Description |
 |--------|-------------|
-| `scripts/coreml-smart-crop/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-smart-crop/build/build.sh [release\|clean]` | Build Swift package (release = release build; clean = full rebuild) |
 | `scripts/coreml-smart-crop/run/detect.sh` | Run in foreground |
 | `scripts/coreml-smart-crop/run/start.sh` | Start daemon |
-| `scripts/coreml-smart-crop/run/stop.sh` | Stop daemon |
+| `scripts/coreml-smart-crop/run/stop.sh` | Stop daemon (also kills any lingering CoreMLSmartCrop processes from this project) |
 | `scripts/coreml-smart-crop/run/status.sh` | Diagnostics |
 | `scripts/coreml-smart-crop/run/logs.sh [lines]` | Tail log file |
 
@@ -511,10 +511,10 @@ Watches `data/streams/coreml/person`, detects faces with Vision, crops each face
 
 | Script | Description |
 |--------|-------------|
-| `scripts/coreml-face-crop/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-face-crop/build/build.sh [release\|clean]` | Build Swift package (release = release build; clean = full rebuild) |
 | `scripts/coreml-face-crop/run/detect.sh` | Run in foreground |
 | `scripts/coreml-face-crop/run/start.sh` | Start daemon |
-| `scripts/coreml-face-crop/run/stop.sh` | Stop daemon |
+| `scripts/coreml-face-crop/run/stop.sh` | Stop daemon (also kills any lingering CoreMLFaceCrop processes) |
 | `scripts/coreml-face-crop/run/status.sh` | Diagnostics |
 | `scripts/coreml-face-crop/run/logs.sh [lines]` | Tail log file |
 
@@ -526,10 +526,10 @@ Watches `data/streams/coreml/vehicle`, runs CompCars-based Core ML make/model cl
 
 | Script | Description |
 |--------|-------------|
-| `scripts/coreml-vehicle-detect/build/build.sh [release]` | Build Swift package |
+| `scripts/coreml-vehicle-detect/build/build.sh [release\|clean]` | Build Swift package (release = release build; clean = full rebuild) |
 | `scripts/coreml-vehicle-detect/run/detect.sh` | Run in foreground |
 | `scripts/coreml-vehicle-detect/run/start.sh` | Start daemon |
-| `scripts/coreml-vehicle-detect/run/stop.sh` | Stop daemon |
+| `scripts/coreml-vehicle-detect/run/stop.sh` | Stop daemon (also kills any lingering CoreMLVehicleDetect processes) |
 | `scripts/coreml-vehicle-detect/run/status.sh` | Diagnostics |
 | `scripts/coreml-vehicle-detect/run/logs.sh [lines]` | Tail log file |
 

@@ -39,7 +39,7 @@ BIN="$ROACH_ROOT/services/coreml-smart-crop/.build/release/CoreMLSmartCrop"
 mkdir -p "$LOG_DIR"
 
 # Start with a fresh log so old "model not found" lines from previous runs don't keep showing up.
-printf "--- coreml-smart-crop daemon started at %s ---\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LOG_FILE"
+printf 'coreml-smart-crop daemon started at %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LOG_FILE"
 
 # Always set absolute paths so the daemon finds the model (ignore stale env like ./models/yolo.mlpackage).
 # Prefer .mlmodelc if present (Swift compiles .mlpackage to .mlmodelc on first use).

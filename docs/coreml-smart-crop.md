@@ -34,4 +34,4 @@ Retries every 10s until model is available.
 
 ## Scripts
 
-From project root: `./scripts/coreml-smart-crop/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-smart-crop/README.md](../services/coreml-smart-crop/README.md).
+From project root: `./scripts/coreml-smart-crop/build/build.sh [release|clean]`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-smart-crop/README.md](../services/coreml-smart-crop/README.md).

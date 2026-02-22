@@ -26,4 +26,4 @@ Default path: `./data/models/CarRecognition.mlmodel`. Run `./scripts/models/down
 
 ## Scripts
 
-From project root: `./scripts/coreml-vehicle-detect/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-vehicle-detect/README.md](../services/coreml-vehicle-detect/README.md).
+From project root: `./scripts/coreml-vehicle-detect/build/build.sh [release|clean]`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-vehicle-detect/README.md](../services/coreml-vehicle-detect/README.md).

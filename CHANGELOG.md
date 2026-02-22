@@ -2,6 +2,20 @@
 
 ## 2026-02-22
 
+### Core ML stop scripts: cleanup lingering processes
+
+#### Changed
+- **coreml-smart-crop, coreml-face-crop, coreml-vehicle-detect (run/stop.sh)**: Stop scripts now always run a cleanup step that finds and kills any other processes running the same service binary (e.g. from old runs or wrong CWD). This prevents multiple daemon instances from accumulating and spamming logs (e.g. repeated "YOLO model not found" from processes that were started without the correct `YOLO_MODEL_PATH`). PID-file logic unchanged; cleanup runs after handling the PID file so that "stop" fully stops the service even when the PID file is missing or stale. scripts/README.md updated to note cleanup behavior.
+
+### Core ML services: build clean, logging, Kafka producer fix
+
+#### Changed
+- **Build scripts (coreml-face-crop, coreml-smart-crop, coreml-vehicle-detect)**: Added `clean` target. Usage is now `build/build.sh [release|clean]`: `release` = release build; `clean` = remove `.build` then build (force full rebuild). Docs (CLAUDE.md, scripts/README.md, service READMEs) updated.
+- **coreml-smart-crop/run/start.sh**: Daemon start log line no longer wrapped with `---`; single-line timestamp only.
+- **coreml-face-crop**: FaceCrop uses `request.results ?? []` (no cast). main: `fflush(stdout)` after key logs; debug logs prefixed with `[main]` for daemon log visibility.
+- **coreml-smart-crop**: main: `fflush(stdout)` and `[main]`-prefixed debug logs; extra debug line for eventType/outputDir.
+- **coreml-vehicle-detect**: **Kafka producer lifecycle**: Producer now retains the events sequence and runs both `producer.run()` (poll loop) and an events consumption task so the producer stays open and messages are sent. Enabled `isAutoCreateTopicsEnabled` for first-use topic creation. Optional `debug` logging (init, send) with `fflush(stdout)`. main: prints Kafka broker/topic at startup; passes `debug: isDebug` to producer; confidence percentage in published log line; more debug/fflush around processing and send.
+
 ### detect-person service removed
 
 #### Removed

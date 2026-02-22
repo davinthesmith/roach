@@ -115,11 +115,11 @@ BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.s
 ./scripts/weatherlink/sql-backfill.sh [--topics ...] [--metadata]
 
 # coreml-smart-crop / coreml-face-crop / coreml-vehicle-detect (native macOS, not Docker)
-./scripts/coreml-smart-crop/build/build.sh [release]
+./scripts/coreml-smart-crop/build/build.sh [release|clean]
 ./scripts/coreml-smart-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
-./scripts/coreml-face-crop/build/build.sh [release]
+./scripts/coreml-face-crop/build/build.sh [release|clean]
 ./scripts/coreml-face-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
-./scripts/coreml-vehicle-detect/build/build.sh [release]
+./scripts/coreml-vehicle-detect/build/build.sh [release|clean]
 ./scripts/coreml-vehicle-detect/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
 Models: `./scripts/models/download-yolo.sh` (smart-crop → `data/models/yolo.mlpackage`), `./scripts/models/download-car-model.sh` (vehicle-detect → `data/models/CarRecognition.mlmodel` + `.mlmodelc`).
 ```

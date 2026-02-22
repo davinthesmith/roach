@@ -36,7 +36,7 @@ From project root (see [scripts/coreml-vehicle-detect](../../scripts/coreml-vehi
 
 | Script | Description |
 |--------|-------------|
-| `build/build.sh [release]` | Build Swift package |
+| `build/build.sh [release\|clean]` | Build Swift package (release = release build; clean = full rebuild) |
 | `run/detect.sh` | Run in foreground (Ctrl+C to stop) |
 | `run/start.sh` | Start as background daemon |
 | `run/stop.sh` | Stop daemon |

@@ -20,4 +20,4 @@ Swift service that watches `data/streams/coreml/person`, detects faces with Appl
 
 ## Scripts
 
-From project root: `./scripts/coreml-face-crop/build/build.sh`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-face-crop/README.md](../services/coreml-face-crop/README.md).
+From project root: `./scripts/coreml-face-crop/build/build.sh [release|clean]`, `run/detect.sh`, `run/start.sh`, `run/stop.sh`, `run/status.sh`, `run/logs.sh`. See [services/coreml-face-crop/README.md](../services/coreml-face-crop/README.md).

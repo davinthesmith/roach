@@ -14,6 +14,7 @@ struct Main {
         }
 
         log("coreml-face-crop starting (watch: \(config.watchDir), output: \(config.facesDir))")
+        fflush(stdout)
 
         try? FileManager.default.createDirectory(atPath: config.watchDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(atPath: config.facesDir, withIntermediateDirectories: true)
@@ -22,15 +23,20 @@ struct Main {
             watchPath: config.watchDir,
             debounceInterval: config.debounceInterval
         ) { url in
+            logDebug("[main] processing \(url.lastPathComponent)...")
+            fflush(stdout)
             do {
                 let count = try FaceCrop.process(imageAt: url, outputDir: config.facesDir)
                 if count > 0 {
                     log("Faces from \(url.lastPathComponent) -> \(config.facesDir) (\(count) crop(s))")
                 } else {
-                    logDebug("No face detected in \(url.lastPathComponent)")
+                    logDebug("[main] no face detected in \(url.lastPathComponent)")
+                    fflush(stdout)
                 }
             } catch {
                 log("Error processing \(url.lastPathComponent): \(error)")
+                logDebug("[main] process failed for \(url.lastPathComponent)")
+                fflush(stdout)
             }
         }
 

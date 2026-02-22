@@ -19,7 +19,7 @@ enum FaceCrop {
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         try handler.perform([request])
 
-        let results = (request.results as? [VNFaceObservation]) ?? []
+        let results = request.results ?? []
         guard !results.isEmpty else {
             return 0
         }

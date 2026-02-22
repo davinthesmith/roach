@@ -24,12 +24,16 @@ struct Main {
             }
         }
 
+        print("coreml-vehicle-detect Kafka config: broker=\(config.kafkaBroker), topic=\(config.kafkaTopic)")
+        fflush(stdout)
+
         let producer: VehicleKafkaProducer
         do {
             producer = try VehicleKafkaProducer(
                 broker: config.kafkaBroker,
                 topic: config.kafkaTopic,
-                logger: logger
+                logger: logger,
+                debug: isDebug
             )
         } catch {
             print("Failed to create Kafka producer: \(error)")
@@ -49,6 +53,8 @@ struct Main {
             let ts = Int64(imageTimestamp) ?? Int64(Date().timeIntervalSince1970)
 
             do {
+                if isDebug { print("[main] processing \(url.lastPathComponent)...") }
+                fflush(stdout)
                 guard let top = try CarClassifier.classify(imageAt: url, topN: config.topN), !top.isEmpty else {
                     if isDebug { print("No classification for \(url.lastPathComponent)") }
                     return
@@ -60,10 +66,16 @@ struct Main {
                     top: top
                 )
                 let key = "vehicle:\(imageTimestamp)"
+                let conf = top[0].confidence
+                let confPct = Int(round(conf * 100))
+                if isDebug { print("[main] sending \(url.lastPathComponent) key=\(key) top=\(top[0].label) confidence=\(String(format: "%.2f", conf))") }
+                fflush(stdout)
                 try producer.send(result: result, key: key)
-                print("Published \(url.lastPathComponent) -> \(config.kafkaTopic) (\(top[0].label))")
+                print("Published \(url.lastPathComponent) -> \(config.kafkaTopic) (\(top[0].label) | \(confPct)% )")
             } catch {
                 print("Error processing \(url.lastPathComponent): \(error)")
+                if isDebug { print("[main] send failed for \(url.lastPathComponent)") }
+                fflush(stdout)
             }
         }
 
