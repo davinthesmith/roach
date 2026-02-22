@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @main
 struct Main {
@@ -26,11 +27,16 @@ struct Main {
                 break
             } catch {
                 log("YOLO model not ready: \(error). Retrying in 10s...")
+                if let cropErr = error as? SmartCropError, case .modelNotFound = cropErr {
+                    log("Ensure YOLO model exists at YOLO_MODEL_PATH (default: data/models/yolo.mlpackage). See docs/coreml-smart-crop.md.")
+                }
+                fflush(stdout)
                 Thread.sleep(forTimeInterval: 10)
             }
         }
 
         log("coreml-smart-crop starting (watch: \(config.watchRoot), output: \(config.coremlOutputDir))")
+        fflush(stdout)
 
         try? FileManager.default.createDirectory(atPath: config.watchRoot, withIntermediateDirectories: true)
         for type in SmartCropEventType.allCases {

@@ -25,13 +25,32 @@ enum SmartCrop {
     nonisolated(unsafe) private static var sharedModel: VNCoreMLModel?
 
     /// Load YOLO model once. Call from main before process.
+    /// If path is .mlpackage, compiles to .mlmodelc on first use (same pattern as coreml-vehicle-detect).
     static func loadModel(at path: String) throws -> VNCoreMLModel {
         if let m = sharedModel { return m }
-        let url = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: path) else {
-            throw SmartCropError.modelNotFound(path)
+        let pathResolved = (path as NSString).standardizingPath
+        let url = URL(fileURLWithPath: pathResolved)
+        guard FileManager.default.fileExists(atPath: pathResolved) else {
+            throw SmartCropError.modelNotFound(pathResolved)
         }
-        let mlModel = try MLModel(contentsOf: url)
+        let modelURL: URL
+        if url.pathExtension == "mlpackage" {
+            let compiledPath = (pathResolved as NSString).deletingPathExtension + ".mlmodelc"
+            if FileManager.default.fileExists(atPath: compiledPath) {
+                modelURL = URL(fileURLWithPath: compiledPath)
+            } else {
+                let compiledURL = try MLModel.compileModel(at: url)
+                let destURL = URL(fileURLWithPath: compiledPath)
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.moveItem(at: compiledURL, to: destURL)
+                modelURL = destURL
+            }
+        } else {
+            modelURL = url
+        }
+        let mlModel = try MLModel(contentsOf: modelURL)
         let model = try VNCoreMLModel(for: mlModel)
         sharedModel = model
         return model
