@@ -10,14 +10,14 @@ Swift service that watches `data/streams/coreml/vehicle`, runs a CompCars-based 
 
 ## Model
 
-Default path: `./models/CarRecognition.mlmodel`. Obtain via instructions from `./scripts/models/download-car-model.sh` or from [Core-ML-Car-Recognition](https://github.com/likedan/Core-ML-Car-Recognition) (convert Caffe to Core ML). Retries every 10s until model is available.
+Default path: `./data/models/CarRecognition.mlmodel`. Run `./scripts/models/download-car-model.sh` to download the pre-built model from [Core-ML-Car-Recognition](https://github.com/likedan/Core-ML-Car-Recognition) (saved under `data/models/`). Retries every 10s until model is available.
 
 ## Config (env)
 
 | Variable | Default |
 |----------|---------|
 | `WATCH_DIR` | `./data/streams/coreml/vehicle` |
-| `CAR_MODEL_PATH` | `./models/CarRecognition.mlmodel` |
+| `CAR_MODEL_PATH` | `./data/models/CarRecognition.mlmodel` |
 | `KAFKA_BROKER` | `localhost:9092` |
 | `KAFKA_TOPIC` | `detect.vehicle` |
 | `DEBOUNCE_SECONDS` | `1.0` |

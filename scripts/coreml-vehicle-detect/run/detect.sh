@@ -23,4 +23,12 @@ BIN="$ROACH_ROOT/services/coreml-vehicle-detect/.build/release/CoreMLVehicleDete
 [ -x "$BIN" ] || BIN="$ROACH_ROOT/services/coreml-vehicle-detect/.build/debug/CoreMLVehicleDetect"
 [ -x "$BIN" ] || { echo "No built binary; run ./scripts/coreml-vehicle-detect/build/build.sh" >&2; exit 1; }
 
+# Prefer .mlmodelc if present (same logic as start.sh)
+if [ -d "$ROACH_ROOT/data/models/CarRecognition.mlmodelc" ]; then
+    export CAR_MODEL_PATH="${CAR_MODEL_PATH:-$ROACH_ROOT/data/models/CarRecognition.mlmodelc}"
+else
+    export CAR_MODEL_PATH="${CAR_MODEL_PATH:-$ROACH_ROOT/data/models/CarRecognition.mlmodel}"
+fi
+export WATCH_DIR="${WATCH_DIR:-$ROACH_ROOT/data/streams/coreml/vehicle}"
+
 exec "$BIN"

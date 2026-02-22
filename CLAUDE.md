@@ -40,8 +40,14 @@ roach/
 ├── docker-compose.yml       # Application services
 ├── docker-compose.infrastructure.yml
 ├── .env                     # Credentials (from .env.example)
-└── data/                    # Persistent Kafka, Zookeeper, Postgres
+└── data/                    # Ephemeral/downloaded/personal data (see Data below)
 ```
+
+**Data** (`./data/`): All ephemeral, downloaded, and personal information lives under `./data/`. Not committed (gitignored). Includes:
+- **Infrastructure**: `data/kafka`, `data/zookeeper`, `data/postgres` (Docker volumes).
+- **Streams**: `data/streams/` — UniFi video/jpg, protect/smart archives, coreml crops (person, vehicle, faces, etc.).
+- **Models**: `data/models/` — ML models consumed by services. Download scripts and trained outputs go here. Examples: `data/models/CarRecognition.mlmodel` (+ `.mlmodelc`), `data/models/yolo.mlpackage` (coreml-smart-crop), `data/models/detect-person/` (trained person classifier). For new models, use `data/models/<service-or-name>/` or a single file under `data/models/` as appropriate; document in the service README and in this file.
+- **Logs**: `data/logs/` — e.g. coreml-vehicle-detect, detect-person daemon logs.
 
 Per-service detail: each has a README in `services/<name>/README.md` (e.g. [weatherlink-kafka](services/weatherlink-kafka/README.md)).
 
@@ -81,9 +87,9 @@ POSTGRES_PASSWORD=...
 - weatherlink-sql-backfill: `TOPICS=weather.iss,...`, `START_OFFSET=-2`, `END_OFFSET=-1`, `INCLUDE_METADATA`, CLI: `--topics`, `--metadata`, `--workers`, etc.
 - detect-person: `KAFKA_BROKER=localhost:9092` (host, not Docker), `KAFKA_TOPIC=detect.person`, `WATCH_DIR`, `TRAIN_DIR`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `MAX_ALTERNATIVES=5`, `DEBOUNCE_SECONDS=1.0`
 - detect-person-stream: `UNIFI_HOST`, `UNIFI_API_KEY` (required), `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.person`, `MODEL_DIR`, `CONFIDENCE_THRESHOLD=0.7`, `FRAME_INTERVAL=1.0`, `RECONNECT_BACKOFF=1s,5s,30s`
-- coreml-smart-crop: `WATCH_ROOT=./data/streams/unifi/protect/smart`, `COREML_OUTPUT_DIR=./data/streams/coreml`, `YOLO_MODEL_PATH=./models/yolo.mlpackage`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
+- coreml-smart-crop: `WATCH_ROOT=./data/streams/unifi/protect/smart`, `COREML_OUTPUT_DIR=./data/streams/coreml`, `YOLO_MODEL_PATH=./data/models/yolo.mlpackage`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
 - coreml-face-crop: `WATCH_DIR=./data/streams/coreml/person`, `FACES_DIR=./data/streams/coreml/faces`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
-- coreml-vehicle-detect: `WATCH_DIR=./data/streams/coreml/vehicle`, `CAR_MODEL_PATH=./models/CarRecognition.mlmodel`, `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.vehicle`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
+- coreml-vehicle-detect: `WATCH_DIR=./data/streams/coreml/vehicle`, `CAR_MODEL_PATH=./data/models/CarRecognition.mlmodel`, `KAFKA_BROKER=localhost:9092`, `KAFKA_TOPIC=detect.vehicle`, `DEBOUNCE_SECONDS=1.0`, `LOG_LEVEL=info`
 
 **File locations**: Credentials `.env` (root). Infra `docker-compose.infrastructure.yml`. Services `docker-compose.yml`. Scripts `./scripts/`. Docs `./docs/`.
 
@@ -127,7 +133,7 @@ BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.s
 ./scripts/coreml-face-crop/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
 ./scripts/coreml-vehicle-detect/build/build.sh [release]
 ./scripts/coreml-vehicle-detect/run/detect.sh | start.sh | stop.sh | status.sh | logs.sh [lines]
-Models: `./scripts/models/download-yolo.sh` (smart-crop), `./scripts/models/download-car-model.sh` (vehicle-detect).
+Models: `./scripts/models/download-yolo.sh` (smart-crop → `data/models/yolo.mlpackage`), `./scripts/models/download-car-model.sh` (vehicle-detect → `data/models/CarRecognition.mlmodel` + `.mlmodelc`).
 ```
 
 **Kafka**: List topics / consumer groups / consume: use `docker exec roach-kafka kafka-topics ...` and `kafka-console-consumer` / `kafka-consumer-groups` (see [docs/operations.md](docs/operations.md)).

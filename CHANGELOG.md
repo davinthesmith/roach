@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-02-22
+
+### Model paths and data directory
+
+#### Changed
+- **Model paths**: All ML model paths now use `./data/models/` instead of `./models/`. Car model: `data/models/CarRecognition.mlmodel` (and `.mlmodelc`). YOLO: `data/models/yolo.mlpackage`. Download scripts (`download-car-model.sh`, `download-yolo.sh`), service config defaults (coreml-vehicle-detect, coreml-smart-crop), and run scripts (start/detect) updated. detect-person already used `data/models/detect-person/`.
+- **CLAUDE.md**: Added **Data** section documenting `./data/` as the root for ephemeral, downloaded, and personal data (gitignored). Describes `data/models/` for ML models with guidance for future models; also notes `data/streams/`, `data/logs/`, and infrastructure dirs. Directory structure now references the Data section.
+
+**Migration**: If you had existing `models/` content, move it: `mkdir -p data/models && mv models/* data/models/ && rmdir models`.
+
+### coreml-vehicle-detect model and scripts
+
+#### Changed
+- **scripts/models/download-car-model.sh**: Now downloads the pre-built `CarRecognition.mlmodel` directly from [Core-ML-Car-Recognition](https://github.com/likedan/Core-ML-Car-Recognition) (CarRecognition/Resources). No Caffe conversion or manual build. After download, compiles to `CarRecognition.mlmodelc` via `xcrun coremlcompiler` so the service can load it at runtime.
+- **coreml-vehicle-detect**: CarClassifier compiles `.mlmodel` to `.mlmodelc` on first use when given a `.mlmodel` path; prefers existing `.mlmodelc` when present. Start/detect scripts set `CAR_MODEL_PATH` to the compiled `.mlmodelc` when it exists (absolute paths) so the daemon works regardless of cwd. Added `fflush(stdout)` after key prints so daemon logs show startup and errors promptly.
+- **docs**: docs/coreml-vehicle-detect.md, services/coreml-vehicle-detect/README.md, scripts/README.md updated to describe running `./scripts/models/download-car-model.sh` to download (and compile) the model; removed Caffe conversion instructions.
+
 ## 2026-02-21
 
 ### coreml-smart-crop (YOLO multi-type) and coreml-vehicle-detect

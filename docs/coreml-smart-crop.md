@@ -12,12 +12,12 @@ Swift service that watches the UniFi Protect **smart** archive (person, package,
 
 ## Model
 
-Default path: `./models/yolo.mlpackage`. Obtain via `./scripts/models/download-yolo.sh` or export with Ultralytics:
+Default path: `./data/models/yolo.mlpackage`. Obtain via `./scripts/models/download-yolo.sh` or export with Ultralytics:
 
 ```bash
 pip install ultralytics
 yolo export model=yolo11n.pt format=coreml nms=True
-mv yolo11n.mlpackage models/yolo.mlpackage
+mkdir -p data/models && mv yolo11n.mlpackage data/models/yolo.mlpackage
 ```
 
 Retries every 10s until model is available.
@@ -28,7 +28,7 @@ Retries every 10s until model is available.
 |----------|---------|
 | `WATCH_ROOT` | `./data/streams/unifi/protect/smart` |
 | `COREML_OUTPUT_DIR` | `./data/streams/coreml` |
-| `YOLO_MODEL_PATH` | `./models/yolo.mlpackage` |
+| `YOLO_MODEL_PATH` | `./data/models/yolo.mlpackage` |
 | `DEBOUNCE_SECONDS` | `1.0` |
 | `LOG_LEVEL` | `info` |
 

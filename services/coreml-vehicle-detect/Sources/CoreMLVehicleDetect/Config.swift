@@ -12,7 +12,7 @@ struct Config {
     static func load() -> Config {
         Config(
             watchDir: env("WATCH_DIR", default: "./data/streams/coreml/vehicle"),
-            carModelPath: env("CAR_MODEL_PATH", default: "./models/CarRecognition.mlmodel"),
+            carModelPath: env("CAR_MODEL_PATH", default: "./data/models/CarRecognition.mlmodel"),
             kafkaBroker: env("KAFKA_BROKER", default: "localhost:9092"),
             kafkaTopic: env("KAFKA_TOPIC", default: "detect.vehicle"),
             debounceInterval: Double(env("DEBOUNCE_SECONDS", default: "1.0")) ?? 1.0,

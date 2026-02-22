@@ -111,8 +111,8 @@ BACKFILL_START_TS=... BACKFILL_END_TS=... ./scripts/weatherlink/kafka-backfill.s
 ./scripts/weatherlink/sql-backfill.sh [--metadata] [--topics ...]
 
 # Person & CoreML (macOS)
-./scripts/models/download-yolo.sh       # smart-crop model
-./scripts/models/download-car-model.sh  # vehicle-detect model (instructions)
+./scripts/models/download-yolo.sh       # smart-crop model → data/models/yolo.mlpackage
+./scripts/models/download-car-model.sh  # vehicle-detect model → data/models/CarRecognition.mlmodel
 ./scripts/detect-person/build/build.sh [release]
 ./scripts/detect-person/train/train.sh
 ./scripts/detect-person/run/detect.sh | start.sh | stop.sh | status.sh

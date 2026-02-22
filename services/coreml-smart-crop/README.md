@@ -12,14 +12,14 @@ Native macOS Swift service that watches the UniFi Protect **smart** archive (per
 
 ## Model
 
-The service requires a YOLO model in Core ML format at `YOLO_MODEL_PATH` (default `./models/yolo.mlpackage`). Retries every 10s until model is available.
+The service requires a YOLO model in Core ML format at `YOLO_MODEL_PATH` (default `./data/models/yolo.mlpackage`). Retries every 10s until model is available.
 
 **Obtain the model:** From project root run `./scripts/models/download-yolo.sh`, or export manually:
 
 ```bash
 pip install ultralytics
 yolo export model=yolo11n.pt format=coreml nms=True
-mv yolo11n.mlpackage models/yolo.mlpackage
+mkdir -p data/models && mv yolo11n.mlpackage data/models/yolo.mlpackage
 ```
 
 See [scripts/models/download-yolo.sh](../../scripts/models/download-yolo.sh) and [docs/coreml-smart-crop.md](../../docs/coreml-smart-crop.md).
@@ -32,7 +32,7 @@ All via environment variables:
 |----------|---------|-------------|
 | `WATCH_ROOT` | `./data/streams/unifi/protect/smart` | Root directory to watch; events under `person/`, `package/`, `animal/`, `vehicle/` are processed |
 | `COREML_OUTPUT_DIR` | `./data/streams/coreml` | Base output directory; crops go to `{COREML_OUTPUT_DIR}/{type}/` |
-| `YOLO_MODEL_PATH` | `./models/yolo.mlpackage` | Path to YOLO Core ML model (`.mlpackage`) |
+| `YOLO_MODEL_PATH` | `./data/models/yolo.mlpackage` | Path to YOLO Core ML model (`.mlpackage`) |
 | `DEBOUNCE_SECONDS` | `1.0` | Debounce delay before processing a new file |
 | `LOG_LEVEL` | `info` | `debug` or `info` |
 

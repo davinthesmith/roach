@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import Darwin
 
 @main
 struct Main {
@@ -15,6 +16,10 @@ struct Main {
                 break
             } catch {
                 print("Car model not ready: \(error). Retrying in 10s...")
+                if let carErr = error as? CarClassifierError, case .modelNotFound = carErr {
+                    print("Run ./scripts/models/download-car-model.sh to download the model.")
+                }
+                fflush(stdout)
                 Thread.sleep(forTimeInterval: 10)
             }
         }
@@ -32,6 +37,7 @@ struct Main {
         }
 
         print("coreml-vehicle-detect starting (watch: \(config.watchDir), topic: \(config.kafkaTopic))")
+        fflush(stdout)
 
         try? FileManager.default.createDirectory(atPath: config.watchDir, withIntermediateDirectories: true)
 

@@ -12,9 +12,9 @@ Native macOS Swift service that watches `data/streams/coreml/vehicle` (cropped v
 
 ## Model
 
-The service requires a car recognition Core ML model at `CAR_MODEL_PATH` (default `./models/CarRecognition.mlmodel`). CompCars-based models (e.g. from [Core-ML-Car-Recognition](https://github.com/likedan/Core-ML-Car-Recognition)) are supported. Retries every 10s until model is available.
+The service requires a car recognition Core ML model at `CAR_MODEL_PATH` (default `./data/models/CarRecognition.mlmodel`). CompCars-based models (e.g. from [Core-ML-Car-Recognition](https://github.com/likedan/Core-ML-Car-Recognition)) are supported. Retries every 10s until model is available.
 
-**Obtain the model:** Run `./scripts/models/download-car-model.sh` for instructions, or convert the Caffe model from the Core-ML-Car-Recognition repo to Core ML and place at `./models/CarRecognition.mlmodel`.
+**Obtain the model:** Run `./scripts/models/download-car-model.sh` to download the pre-built model to `./data/models/CarRecognition.mlmodel` (and compiled `.mlmodelc`).
 
 ## Configuration
 
@@ -23,7 +23,7 @@ All via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WATCH_DIR` | `./data/streams/coreml/vehicle` | Directory to watch for new vehicle crop images |
-| `CAR_MODEL_PATH` | `./models/CarRecognition.mlmodel` | Path to car recognition Core ML model |
+| `CAR_MODEL_PATH` | `./data/models/CarRecognition.mlmodel` | Path to car recognition Core ML model |
 | `KAFKA_BROKER` | `localhost:9092` | Kafka broker (host, not Docker) |
 | `KAFKA_TOPIC` | `detect.vehicle` | Topic for vehicle detection messages |
 | `DEBOUNCE_SECONDS` | `1.0` | Debounce delay before processing a new file |

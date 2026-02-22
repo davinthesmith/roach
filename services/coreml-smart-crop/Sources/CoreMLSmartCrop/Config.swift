@@ -11,7 +11,7 @@ struct Config {
         Config(
             watchRoot: env("WATCH_ROOT", default: "./data/streams/unifi/protect/smart"),
             coremlOutputDir: env("COREML_OUTPUT_DIR", default: "./data/streams/coreml"),
-            yoloModelPath: env("YOLO_MODEL_PATH", default: "./models/yolo.mlpackage"),
+            yoloModelPath: env("YOLO_MODEL_PATH", default: "./data/models/yolo.mlpackage"),
             debounceInterval: Double(env("DEBOUNCE_SECONDS", default: "1.0")) ?? 1.0,
             logLevel: env("LOG_LEVEL", default: "info")
         )

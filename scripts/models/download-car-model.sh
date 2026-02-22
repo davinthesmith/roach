@@ -1,7 +1,6 @@
 #!/bin/bash
-# Ensure Car Recognition Core ML model exists at ./models/CarRecognition.mlmodel for coreml-vehicle-detect.
-# The Core-ML-Car-Recognition repo provides a Caffe model and convert.py; you must run the conversion
-# to produce CarRecognition.mlmodel, or place a pre-converted .mlmodel at the path below.
+# Ensure Car Recognition Core ML model exists at ./data/models/CarRecognition.mlmodel for coreml-vehicle-detect.
+# Downloads the pre-built .mlmodel from Core-ML-Car-Recognition repo (CarRecognition/Resources).
 # Usage: ./scripts/models/download-car-model.sh
 
 set -e
@@ -10,8 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROACH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROACH_ROOT"
 
-MODELS_DIR="models"
+MODELS_DIR="data/models"
 TARGET="$MODELS_DIR/CarRecognition.mlmodel"
+SOURCE_URL="https://raw.githubusercontent.com/likedan/Core-ML-Car-Recognition/master/CarRecognition/Resources/CarRecognition.mlmodel"
 
 mkdir -p "$MODELS_DIR"
 
@@ -20,18 +20,30 @@ if [ -f "$TARGET" ]; then
     exit 0
 fi
 
-# No direct .mlmodel in the repo (only Caffe + convert.py). Print instructions.
-echo "⚠️  Car Recognition model not found at $TARGET"
-echo ""
-echo "The Core-ML-Car-Recognition repo provides a Caffe model and Python script to convert to Core ML."
-echo "To create the model:"
-echo "  1. git clone https://github.com/likedan/Core-ML-Car-Recognition.git /tmp/Core-ML-Car-Recognition"
-echo "  2. cd /tmp/Core-ML-Car-Recognition/Convert"
-echo "  3. pip install coremltools"
-echo "  4. python convert.py   # produces Core ML model"
-echo "  5. cp <output>.mlmodel $ROACH_ROOT/$TARGET"
-echo ""
-echo "Or place an existing CarRecognition.mlmodel (CompCars-based) at $TARGET"
-echo ""
-echo "coreml-vehicle-detect will fail at startup if the model is missing."
-exit 1
+echo "📥 Downloading CarRecognition.mlmodel from Core-ML-Car-Recognition..."
+if command -v curl &>/dev/null; then
+    curl -sSL -o "$TARGET" "$SOURCE_URL"
+elif command -v wget &>/dev/null; then
+    wget -q -O "$TARGET" "$SOURCE_URL"
+else
+    echo "❌ Need curl or wget to download the model" >&2
+    exit 1
+fi
+
+if [ ! -s "$TARGET" ]; then
+    echo "❌ Download failed or empty file at $TARGET" >&2
+    rm -f "$TARGET"
+    exit 1
+fi
+
+echo "✅ Car model saved to $TARGET"
+
+# Compile to .mlmodelc so Core ML can load it at runtime
+COMPILED="$MODELS_DIR/CarRecognition.mlmodelc"
+if [ ! -d "$COMPILED" ] || [ "$TARGET" -nt "$COMPILED" ]; then
+    echo "🔨 Compiling to $COMPILED..."
+    xcrun coremlcompiler compile "$TARGET" "$MODELS_DIR"
+    echo "✅ Compiled to $COMPILED"
+else
+    echo "✅ Compiled model already present at $COMPILED"
+fi

@@ -38,8 +38,16 @@ BIN="$ROACH_ROOT/services/coreml-vehicle-detect/.build/release/CoreMLVehicleDete
 
 mkdir -p "$LOG_DIR"
 
+# Use absolute paths so the daemon works regardless of cwd. Prefer .mlmodelc if present.
+if [ -d "$ROACH_ROOT/data/models/CarRecognition.mlmodelc" ]; then
+    export CAR_MODEL_PATH="${CAR_MODEL_PATH:-$ROACH_ROOT/data/models/CarRecognition.mlmodelc}"
+else
+    export CAR_MODEL_PATH="${CAR_MODEL_PATH:-$ROACH_ROOT/data/models/CarRecognition.mlmodel}"
+fi
+export WATCH_DIR="${WATCH_DIR:-$ROACH_ROOT/data/streams/coreml/vehicle}"
+
 echo "🚀 Starting coreml-vehicle-detect daemon..."
-nohup "$BIN" >> "$LOG_FILE" 2>&1 &
+cd "$ROACH_ROOT" && nohup env CAR_MODEL_PATH="$CAR_MODEL_PATH" WATCH_DIR="$WATCH_DIR" "$BIN" >> "$LOG_FILE" 2>&1 &
 DPID=$!
 echo "$DPID" > "$PID_FILE"
 

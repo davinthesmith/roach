@@ -625,8 +625,8 @@ Remove the LaunchAgent and stop auto-start.
 Native macOS Swift services. Run on the host (not Docker). All scripts run from project root.
 
 **Model installation**
-- **coreml-smart-crop**: run `./scripts/models/download-yolo.sh` (or follow its instructions) to obtain `./models/yolo.mlpackage`.
-- **coreml-vehicle-detect**: run `./scripts/models/download-car-model.sh` for instructions to obtain `./models/CarRecognition.mlmodel`.
+- **coreml-smart-crop**: run `./scripts/models/download-yolo.sh` (or follow its instructions) to obtain `./data/models/yolo.mlpackage`.
+- **coreml-vehicle-detect**: run `./scripts/models/download-car-model.sh` to download `./data/models/CarRecognition.mlmodel` (and `.mlmodelc`).
 - **coreml-face-crop**: no external model.
 
 ### coreml-smart-crop
